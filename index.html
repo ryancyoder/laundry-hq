@@ -555,6 +555,8 @@ svg.doll{width:100%;max-width:230px;height:auto;display:block}
 .wacts .cam input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
 
 svg.thumb{display:block;overflow:visible}
+img.thumb{display:block;width:100%;max-width:74px;height:62px;object-fit:contain}
+.slot img.thumb{width:26px;height:26px;max-width:26px}
 .chip.sm{padding:5px 10px;font-size:12px}
 .chip:disabled{opacity:.35;cursor:not-allowed}
 .sw2{
@@ -665,6 +667,9 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 <div id="aurora"><span></span><span></span><span></span><span></span></div>
 <div id="bubbles"></div>
 <canvas id="confetti"></canvas>
+<!-- offscreen, used only to measure garment geometry via getBBox() -->
+<svg id="measure" viewBox="0 0 200 380" aria-hidden="true"
+     style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none"></svg>
 <div id="toasts" aria-live="polite"></div>
 
 <div class="wrap">
@@ -1779,7 +1784,17 @@ const photoAll = ()            => db().then(d=>new Promise((res,rej)=>{
 /* In-memory so render() stays synchronous. */
 let PHOTOS = {};
 
-/* Downscale hard — an iPad photo is 3–5MB; this lands around 40KB. */
+/* Does the image carry real transparency? A cut-out PNG must not be flattened
+   to JPEG — that is what turns a transparent background into a black box. */
+function detectAlpha(ctx, w, h){
+  let d;
+  try{ d = ctx.getImageData(0,0,w,h).data; }catch(e){ return false; }
+  for(let i=3; i<d.length; i+=16) if(d[i] < 250) return true;   // every 4th pixel
+  return false;
+}
+
+/* Downscale hard — an iPad photo is 3–5MB. Opaque shots go to JPEG; cut-outs
+   keep their alpha (WebP where the browser can encode it, else PNG). */
 function downscale(file, max=440){
   return new Promise((res,rej)=>{
     const url = URL.createObjectURL(file), img = new Image();
@@ -1788,9 +1803,20 @@ function downscale(file, max=440){
       const c = document.createElement('canvas');
       c.width  = Math.max(1, Math.round(img.width*s));
       c.height = Math.max(1, Math.round(img.height*s));
-      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img,0,0,c.width,c.height);
       URL.revokeObjectURL(url);
-      try{ res(c.toDataURL('image/jpeg',0.78)); }catch(e){ rej(e); }
+      try{
+        const alpha = detectAlpha(ctx, c.width, c.height);
+        let data;
+        if(alpha){
+          data = c.toDataURL('image/webp', 0.9);
+          if(data.indexOf('data:image/webp') !== 0) data = c.toDataURL('image/png');
+        }else{
+          data = c.toDataURL('image/jpeg', 0.78);
+        }
+        res({ data, alpha });
+      }catch(e){ rej(e); }
     };
     img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Not a readable image')); };
     img.src = url;
@@ -1801,12 +1827,15 @@ async function attachPhoto(itemId, file){
   if(!file) return;
   if(!/^image\//.test(file.type)){ toast('That file isn’t an image.','bad'); return; }
   try{
-    const data = await downscale(file);
+    const { data, alpha } = await downscale(file);
     await photoPut(itemId, data);
     PHOTOS[itemId] = data;
-    const it = itemById(itemId); if(it) it.photo = true;
+    const it = itemById(itemId);
+    if(it){ it.photo = true; it.alpha = alpha; }
     commit();
-    toast('Photo added — it now fills the garment shape.','good');
+    toast(alpha
+      ? 'Cut-out added — its own outline is used instead of the generic shape.'
+      : 'Photo added — it now fills the garment shape.', 'good');
   }catch(e){
     toast('Could not read that photo: '+e.message,'bad');
   }
@@ -1814,7 +1843,8 @@ async function attachPhoto(itemId, file){
 async function dropPhoto(itemId){
   try{ await photoDel(itemId); }catch(e){}
   delete PHOTOS[itemId];
-  const it = itemById(itemId); if(it) it.photo = false;
+  const it = itemById(itemId);
+  if(it){ it.photo = false; it.alpha = false; }
   commit();
 }
 
@@ -1896,16 +1926,32 @@ const SHAPES = {
      + '<rect x="98" y="37" width="44" height="9" rx="4.5"/>',
 };
 
-/* Thumbnails crop to the garment, not the whole figure. Full-length pieces
-   need their own box or the skirt falls outside it. */
-const THUMB_BOX = {
-  dress:[36,68,128,196], coat:[34,66,132,168], skirt:[46,146,108,110],
-  jeans:[62,146,76,182], pants:[62,146,76,182], leggings:[62,146,76,182],
-  shorts:[62,146,76,102], boots:[60,270,80,66],
-};
-const CAT_BOX = {
-  hat:[68,6,64,52], top:[36,68,128,112], outer:[34,68,132,116],
-  bottom:[58,146,84,186], shoes:[62,296,76,40],
+/* Real bounds of each garment, measured once from the shapes themselves —
+   a photo has to be scaled to the garment, not to the whole 200×380 canvas. */
+const _bbox = {};
+function shapeBBox(kind){
+  if(_bbox[kind]) return _bbox[kind];
+  const fallback = {x:40,y:70,w:120,h:110};
+  const svg = document.getElementById('measure');
+  if(!svg || !SHAPES[kind]) return fallback;
+  try{
+    svg.innerHTML = '<g id="mg">'+SHAPES[kind]+'</g>';
+    const b = svg.querySelector('#mg').getBBox();
+    svg.innerHTML = '';
+    if(!b || !b.width) return fallback;
+    return _bbox[kind] = { x:b.x, y:b.y, w:b.width, h:b.height };
+  }catch(e){ return fallback; }
+}
+
+/* Where a cut-out is allowed to sit. Deliberately roomier than the drawn
+   garment: real jeans photographed flat are wider than the doll's legs, and
+   should read as jeans on the figure rather than be squeezed into the shape. */
+const CUTOUT_BOX = {
+  hat:    [60,   2,  80,  56],
+  top:    [40,  68, 120, 110],
+  outer:  [36,  66, 128, 118],
+  bottom: [52, 150,  96, 176],
+  shoes:  [58, 292,  84,  46],
 };
 
 /* Paint a garment: photo-filled when one exists, flat colour otherwise. */
@@ -1919,10 +1965,22 @@ function garment(item, scope){
   const photo = PHOTOS[item.id];
   if(!photo) return '<g fill="'+item.hex+'" '+edge+'>'+shape+'</g>';
 
+  /* A cut-out already has its own silhouette — clipping it to the generic
+     shape would throw that away. Fit it into the slot and let it be itself. */
+  if(item.alpha){
+    const k = CUTOUT_BOX[GARMENTS[item.kind].cat];
+    return '<image href="'+photo+'" x="'+k[0]+'" y="'+k[1]+'" width="'+k[2]+'" height="'+k[3]
+         + '" preserveAspectRatio="xMidYMid meet"/>';
+  }
+
+  /* A normal photo is a rectangle, so it still gets clipped — but scaled to
+     the garment's own bounds, not stretched across the whole figure. */
+  const b = shapeBBox(item.kind);
   const cid = 'cl'+(scope||'')+(++clipSeq);
   return '<clipPath id="'+cid+'">'+shape+'</clipPath>'
        + '<g clip-path="url(#'+cid+')">'
-         + '<image href="'+photo+'" x="0" y="0" width="200" height="380" preserveAspectRatio="xMidYMid slice"/>'
+         + '<image href="'+photo+'" x="'+b.x+'" y="'+b.y+'" width="'+b.w+'" height="'+b.h
+         + '" preserveAspectRatio="xMidYMid slice"/>'
        + '</g>'
        + '<g fill="none" '+edge+'>'+shape+'</g>';
 }
@@ -1958,8 +2016,12 @@ function doll(outfit, opts){
 
 /* A single garment drawn small, for wardrobe tiles. */
 function itemThumb(item){
-  const box = THUMB_BOX[item.kind] || CAT_BOX[GARMENTS[item.kind].cat];
-  const vb = box[0]+' '+box[1]+' '+box[2]+' '+box[3];
+  // a cut-out shows as itself — no silhouette to crop to
+  if(item.alpha && PHOTOS[item.id]){
+    return '<img class="thumb" src="'+PHOTOS[item.id]+'" alt="'+esc(item.name)+'">';
+  }
+  const b = shapeBBox(item.kind), p = 5;
+  const vb = (b.x-p)+' '+(b.y-p)+' '+(b.w+2*p)+' '+(b.h+2*p);
   return '<svg class="thumb" viewBox="'+vb+'" role="img" aria-label="'+esc(item.name)+'">'
     + garment(item,'t') + '</svg>';
 }
