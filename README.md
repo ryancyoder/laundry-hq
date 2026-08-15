@@ -27,6 +27,22 @@ how long the clothes have been sitting.
 - *Household loads* — towels, rags and sheets, with their intervals
 - *Falling behind* — anything whose turn came round with nothing finished since
 
+**Closet** — a wardrobe per person, laid out as a paper doll. Pick a day, tap items to
+dress the figure, tap a worn item again to take it off. Five layers: hat, outer, top,
+bottom, shoes. Tapping the doll jumps the wardrobe filter to that slot.
+
+- *Standard graphics* — 19 garment shapes (t-shirt, button-down, hoodie, jeans, skirt,
+  boots, beanie…) in 14 clothing colours. Eight one-tap starters get a wardrobe usable
+  in seconds.
+- *Real photos* — snap a garment from the tile and the photo is clipped into that
+  garment's silhouette, on the doll and the tile. That's what ties the catalogue to the
+  actual item in the drawer.
+- *Out of season* — mark items packed away, or bulk-pack a whole season. Packed items
+  stay in the catalogue but drop out of outfit planning and are removed from any day
+  they were already planned for.
+- *The week* — seven mini dolls across the top, one per day, so a week of outfits is
+  visible at a glance. "Copy \<yesterday\>" and "Clear day" for fast planning.
+
 **Stats** — loads in flight, folding backlog, weekly total vs. the week before, average
 turnaround, a 14-day column chart, a bar chart per person and household item, and the
 last 20 completed loads.
@@ -70,9 +86,16 @@ badges rather than both showing the same two letters.
 
 ## Data
 
-Everything lives in this browser's `localStorage` under `yoder-laundry-v1`. Nothing is
-uploaded and nothing leaves the device — which also means **each device keeps its own
-board**. There is an *Export JSON* button under ⚙ for backups.
+Everything lives in this browser under `yoder-laundry-v1` (localStorage) plus a
+`laundry-hq-photos` IndexedDB store. Nothing is uploaded and nothing leaves the device —
+which also means **each device keeps its own board**. There is an *Export JSON* button
+under ⚙ for backups.
+
+Photos are deliberately **not** in localStorage: that quota is about 5MB total, and one
+iPad photo is 3–5MB, so a couple of garments would break the whole app. Instead every
+photo is downscaled to 440px at capture (a 122KB test shot lands around 19KB) and
+written to IndexedDB, which has room for hundreds of items. The *Export JSON* backup
+covers your loads, wardrobe and plans — **it does not include the photos.**
 
 If you later want all seven phones looking at the same live board, that needs a real
 backend; the state is a single `S` object read and written through `load()`/`save()`,

@@ -488,6 +488,82 @@ table.hist td.num{font-variant-numeric:tabular-nums;text-align:right;padding-rig
 table.hist tr:last-child td{border-bottom:0}
 .scroller{overflow-x:auto}
 
+/* ---------- wardrobe / paper doll ---------- */
+.closet{display:grid;gap:12px;grid-template-columns:minmax(0,286px) minmax(0,1fr);align-items:start;margin-top:12px}
+/* keep two columns on iPad portrait (768) — one column there wastes the width
+   and blows the doll up to full-page height */
+@media (max-width:700px){
+  .closet{grid-template-columns:1fr}
+  svg.doll{max-width:186px}
+  .dollwrap{padding:8px}
+}
+@media (max-width:480px){ svg.doll{max-width:150px} }
+
+.dollwrap{
+  background:linear-gradient(180deg,var(--surface-2),var(--surface));
+  border:1px solid var(--border);border-radius:var(--r);
+  padding:10px;display:grid;place-items:center;
+}
+svg.doll{width:100%;max-width:230px;height:auto;display:block}
+.dollhit{fill:transparent;cursor:pointer}
+.dollhit:hover{fill:rgba(255,255,255,.07)}
+
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.daycard{
+  appearance:none;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:7px 4px 5px;cursor:pointer;transition:.15s;
+  display:flex;flex-direction:column;align-items:center;gap:4px;font:inherit;color:var(--ink-2);
+}
+.daycard:hover{border-color:var(--border-2);background:var(--surface-3)}
+.daycard.sel{border-color:var(--s1);background:color-mix(in oklab,var(--s1) 16%,var(--surface-2))}
+.daycard.today .dl{color:var(--s1)}
+.daycard .dl{font-size:10.5px;font-weight:750;letter-spacing:.6px;text-transform:uppercase}
+.daycard .dv{display:block;width:100%;min-height:56px;display:grid;place-items:center}
+.daycard .dv svg{width:100%;max-width:46px;height:auto}
+.daycard .dnone{color:var(--muted);font-size:17px;opacity:.5}
+
+.slots{display:flex;flex-direction:column;margin-top:12px}
+.slot{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--grid);min-height:40px}
+.slot:last-child{border-bottom:0}
+.slot .sc{font-size:10.5px;font-weight:750;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);width:52px;flex:none}
+.slot .sv{display:flex;align-items:center;gap:7px;font-size:12.5px;min-width:0}
+.slot .sv b{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot .sv.none{color:var(--muted);font-style:italic}
+.slot .btn{margin-left:auto}
+.slot svg.thumb{width:26px;height:26px;flex:none}
+
+.wgrid{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+.wcard{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);
+  overflow:hidden;transition:.15s;display:flex;flex-direction:column;
+}
+.wcard:hover{border-color:var(--border-2)}
+.wcard.on{border-color:var(--s1);box-shadow:0 0 0 1px var(--s1) inset}
+.wcard.stored{opacity:.62}
+.wpick{
+  appearance:none;background:none;border:0;font:inherit;color:inherit;cursor:pointer;
+  padding:9px 9px 7px;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;text-align:center;
+}
+.wpick svg.thumb{width:100%;max-width:74px;height:62px}
+.wpick .wn{font-size:12.5px;font-weight:650;line-height:1.25;overflow-wrap:anywhere}
+.wpick .wm{font-size:10.5px;color:var(--muted)}
+.wcard.on .wpick .wn{color:var(--s1)}
+.wacts{display:flex;flex-wrap:wrap;gap:3px;padding:0 6px 7px;justify-content:center}
+.wacts .btn{padding:4px 7px;font-size:10.5px;border-radius:7px}
+.wacts .btn.del:hover{color:var(--crit);border-color:var(--crit)}
+.wacts .cam{position:relative;overflow:hidden}
+.wacts .cam input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+
+svg.thumb{display:block;overflow:visible}
+.chip.sm{padding:5px 10px;font-size:12px}
+.chip:disabled{opacity:.35;cursor:not-allowed}
+.sw2{
+  width:28px;height:28px;border-radius:8px;cursor:pointer;padding:0;
+  border:1px solid var(--border-2);transition:.14s;
+}
+.sw2:hover{transform:scale(1.08)}
+.sw2[aria-pressed="true"]{box-shadow:0 0 0 2px var(--plane),0 0 0 4px var(--s1)}
+
 /* ---------- modal ---------- */
 dialog{
   border:1px solid var(--border-2);border-radius:18px;padding:0;
@@ -608,6 +684,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-board" aria-selected="true" onclick="setView('board')">Board</button>
       <button role="tab" id="tab-week"  aria-selected="false" onclick="setView('week')">Week</button>
+      <button role="tab" id="tab-closet" aria-selected="false" onclick="setView('closet')">Closet</button>
       <button role="tab" id="tab-stats" aria-selected="false" onclick="setView('stats')">Stats</button>
     </div>
     <button class="btn primary deskadd" onclick="openLoad()">＋ New load</button>
@@ -678,6 +755,11 @@ function blank(){
       { id:'c_rag', name:'Rags',   emoji:'🧽', everyDays:7,  days:[6],   hex:'#6f6e86' },
       { id:'c_sht', name:'Sheets', emoji:'🛏️', everyDays:30, days:[],    hex:'#535267' },
     ],
+    /* Wardrobe items. Photos live in IndexedDB keyed by item id — never here,
+       because localStorage is ~5MB and one phone photo would fill it. */
+    wardrobe:[],
+    /* plans[personId][dayOfWeek] = { hat, top, outer, bottom, shoes } of item ids */
+    plans:{},
     settings:{ sound:true, notify:false },
   };
 }
@@ -690,6 +772,8 @@ function load(){
     if(!Array.isArray(s.machines) || !s.machines.length) s.machines = blank().machines;
     if(!Array.isArray(s.people)) s.people = [];
     if(!Array.isArray(s.loads))  s.loads  = [];
+    if(!Array.isArray(s.wardrobe)) s.wardrobe = [];
+    if(!s.plans || typeof s.plans!=='object') s.plans = {};
     s.people.forEach(p=>{ if(!Array.isArray(p.days)) p.days = []; });
 
     // chores moved from {kind,dow} to {emoji,days} — rebuild rather than patch
@@ -808,10 +892,13 @@ const phaseOf = left => left > 0 ? 'run' : (left > -NAG_AFTER ? 'ready' : 'nag')
    FEEDBACK — toast / sound / notification / confetti
    ========================================================================= */
 function toast(msg, kind){
+  const box = document.getElementById('toasts');
+  // adding several items in a row shouldn't bury the screen in toasts
+  while(box.children.length >= 3) box.firstChild.remove();
   const el = document.createElement('div');
   el.className = 'toast' + (kind ? ' '+kind : '');
   el.textContent = msg;
-  document.getElementById('toasts').appendChild(el);
+  box.appendChild(el);
   setTimeout(()=>{ el.style.transition='.3s'; el.style.opacity='0'; el.style.transform='translateY(8px)'; }, 2600);
   setTimeout(()=>el.remove(), 3000);
 }
@@ -1585,6 +1672,542 @@ function weekView(){
 }
 
 /* =========================================================================
+   WARDROBE — model
+   ========================================================================= */
+const CATS = [
+  { id:'hat',    name:'Hats'    },
+  { id:'outer',  name:'Outer'   },
+  { id:'top',    name:'Tops'    },
+  { id:'bottom', name:'Bottoms' },
+  { id:'shoes',  name:'Shoes'   },
+];
+const SLOT_ORDER = ['bottom','top','outer','shoes','hat'];   // back → front
+
+const GARMENTS = {
+  tee:        { cat:'top',    name:'T-shirt'      },
+  longsleeve: { cat:'top',    name:'Long sleeve'  },
+  button:     { cat:'top',    name:'Button-down'  },
+  sweater:    { cat:'top',    name:'Sweater'      },
+  dress:      { cat:'top',    name:'Dress'        },
+  hoodie:     { cat:'outer',  name:'Hoodie'       },
+  jacket:     { cat:'outer',  name:'Jacket'       },
+  coat:       { cat:'outer',  name:'Coat'         },
+  jeans:      { cat:'bottom', name:'Jeans'        },
+  pants:      { cat:'bottom', name:'Pants'        },
+  shorts:     { cat:'bottom', name:'Shorts'       },
+  skirt:      { cat:'bottom', name:'Skirt'        },
+  leggings:   { cat:'bottom', name:'Leggings'     },
+  sneakers:   { cat:'shoes',  name:'Sneakers'     },
+  boots:      { cat:'shoes',  name:'Boots'        },
+  sandals:    { cat:'shoes',  name:'Sandals'      },
+  dressshoes: { cat:'shoes',  name:'Dress shoes'  },
+  beanie:     { cat:'hat',    name:'Beanie'       },
+  cap:        { cat:'hat',    name:'Cap'          },
+};
+
+const SEASONS = [
+  { id:'all',    name:'All year' },
+  { id:'spring', name:'Spring'   },
+  { id:'summer', name:'Summer'   },
+  { id:'fall',   name:'Fall'     },
+  { id:'winter', name:'Winter'   },
+];
+
+/* Common clothing colours — deliberately garment-like, not the chart palette. */
+const CLOTH = [
+  ['#3f5b7c','Denim'],   ['#1d2433','Navy'],    ['#111114','Black'],
+  ['#f2f0ea','White'],   ['#9a9a9f','Grey'],    ['#b39169','Khaki'],
+  ['#5c6b4f','Olive'],   ['#6b4a35','Brown'],   ['#8f2f2f','Red'],
+  ['#2f6b4f','Green'],   ['#7a5c86','Purple'],  ['#d9a441','Mustard'],
+  ['#c98a9a','Pink'],    ['#3b7fa8','Blue'],
+];
+
+/* Starter items — one tap each, so a wardrobe is usable before any photos. */
+const STARTERS = [
+  { kind:'jeans',    name:'Blue jeans',    hex:'#3f5b7c', season:'all'    },
+  { kind:'tee',      name:'White tee',     hex:'#f2f0ea', season:'all'    },
+  { kind:'tee',      name:'Black tee',     hex:'#111114', season:'all'    },
+  { kind:'shorts',   name:'Khaki shorts',  hex:'#b39169', season:'summer' },
+  { kind:'hoodie',   name:'Grey hoodie',   hex:'#9a9a9f', season:'all'    },
+  { kind:'jacket',   name:'Leather jacket',hex:'#3a2f2b', season:'fall'   },
+  { kind:'sneakers', name:'Sneakers',      hex:'#f2f0ea', season:'all'    },
+  { kind:'boots',    name:'Boots',         hex:'#6b4a35', season:'winter' },
+];
+
+const itemsFor = pid => S.wardrobe.filter(w=>w.personId===pid);
+const itemById = id => S.wardrobe.find(w=>w.id===id) || null;
+const planFor  = (pid,dow) => (S.plans[pid] && S.plans[pid][dow]) || {};
+
+function setSlot(pid, dow, cat, itemId){
+  S.plans[pid] = S.plans[pid] || {};
+  S.plans[pid][dow] = S.plans[pid][dow] || {};
+  const cur = S.plans[pid][dow][cat];
+  if(cur === itemId) delete S.plans[pid][dow][cat];   // tap again to remove
+  else S.plans[pid][dow][cat] = itemId;
+  commit();
+}
+
+/* =========================================================================
+   WARDROBE — photos (IndexedDB; localStorage is far too small)
+   ========================================================================= */
+let _db = null;
+function db(){
+  return _db || (_db = new Promise((res,rej)=>{
+    const r = indexedDB.open('laundry-hq-photos', 1);
+    r.onupgradeneeded = () => { if(!r.result.objectStoreNames.contains('p')) r.result.createObjectStore('p'); };
+    r.onsuccess = () => res(r.result);
+    r.onerror   = () => rej(r.error);
+  }));
+}
+function tx(mode, fn){
+  return db().then(d => new Promise((res,rej)=>{
+    const t = d.transaction('p', mode), st = t.objectStore('p');
+    const out = fn(st);
+    t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined);
+    t.onerror    = () => rej(t.error);
+  }));
+}
+const photoPut = (id,dataUrl) => tx('readwrite', st=>st.put(dataUrl,id));
+const photoDel = id            => tx('readwrite', st=>st.delete(id));
+const photoAll = ()            => db().then(d=>new Promise((res,rej)=>{
+  const t=d.transaction('p','readonly'), st=t.objectStore('p'), out={};
+  const kq=st.getAllKeys(), vq=st.getAll();
+  t.oncomplete=()=>{ kq.result.forEach((k,i)=>out[k]=vq.result[i]); res(out); };
+  t.onerror=()=>rej(t.error);
+}));
+
+/* In-memory so render() stays synchronous. */
+let PHOTOS = {};
+
+/* Downscale hard — an iPad photo is 3–5MB; this lands around 40KB. */
+function downscale(file, max=440){
+  return new Promise((res,rej)=>{
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max/Math.max(img.width,img.height));
+      const c = document.createElement('canvas');
+      c.width  = Math.max(1, Math.round(img.width*s));
+      c.height = Math.max(1, Math.round(img.height*s));
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      try{ res(c.toDataURL('image/jpeg',0.78)); }catch(e){ rej(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Not a readable image')); };
+    img.src = url;
+  });
+}
+
+async function attachPhoto(itemId, file){
+  if(!file) return;
+  if(!/^image\//.test(file.type)){ toast('That file isn’t an image.','bad'); return; }
+  try{
+    const data = await downscale(file);
+    await photoPut(itemId, data);
+    PHOTOS[itemId] = data;
+    const it = itemById(itemId); if(it) it.photo = true;
+    commit();
+    toast('Photo added — it now fills the garment shape.','good');
+  }catch(e){
+    toast('Could not read that photo: '+e.message,'bad');
+  }
+}
+async function dropPhoto(itemId){
+  try{ await photoDel(itemId); }catch(e){}
+  delete PHOTOS[itemId];
+  const it = itemById(itemId); if(it) it.photo = false;
+  commit();
+}
+
+/* =========================================================================
+   WARDROBE — paper doll
+   Shapes are plain elements with no fill; each is painted flat OR used as a
+   clip so a real photo of the garment fills its silhouette.
+   ========================================================================= */
+const BODY = [
+  '<ellipse cx="100" cy="44" rx="23" ry="26"/>',
+  '<rect x="93" y="63" width="14" height="17" rx="6"/>',
+  '<rect x="70" y="76" width="60" height="96" rx="22"/>',
+  '<rect x="52" y="82" width="17" height="90" rx="8.5"/>',
+  '<rect x="131" y="82" width="17" height="90" rx="8.5"/>',
+  '<rect x="73" y="155" width="54" height="40" rx="18"/>',
+  '<rect x="78" y="182" width="21" height="136" rx="10.5"/>',
+  '<rect x="101" y="182" width="21" height="136" rx="10.5"/>',
+  '<ellipse cx="88" cy="322" rx="14" ry="9"/>',
+  '<ellipse cx="112" cy="322" rx="14" ry="9"/>',
+].join('');
+
+const SHAPES = {
+  tee: '<rect x="64" y="77" width="72" height="94" rx="15"/>'
+     + '<rect x="46" y="81" width="22" height="37" rx="11"/>'
+     + '<rect x="132" y="81" width="22" height="37" rx="11"/>',
+  longsleeve: '<rect x="64" y="77" width="72" height="94" rx="15"/>'
+     + '<rect x="47" y="81" width="21" height="92" rx="10.5"/>'
+     + '<rect x="132" y="81" width="21" height="92" rx="10.5"/>',
+  button: '<rect x="64" y="77" width="72" height="94" rx="8"/>'
+     + '<rect x="47" y="81" width="21" height="92" rx="10.5"/>'
+     + '<rect x="132" y="81" width="21" height="92" rx="10.5"/>',
+  sweater: '<rect x="62" y="75" width="76" height="98" rx="19"/>'
+     + '<rect x="45" y="79" width="23" height="94" rx="11.5"/>'
+     + '<rect x="132" y="79" width="23" height="94" rx="11.5"/>',
+  dress: '<rect x="64" y="77" width="72" height="80" rx="15"/>'
+     + '<rect x="46" y="81" width="22" height="36" rx="11"/>'
+     + '<rect x="132" y="81" width="22" height="36" rx="11"/>'
+     + '<path d="M66,146 h68 l17,102 a7,7 0 0 1 -7,8 h-88 a7,7 0 0 1 -7,-8 Z"/>',
+
+  hoodie: '<ellipse cx="100" cy="72" rx="29" ry="17"/>'
+     + '<rect x="61" y="77" width="78" height="99" rx="17"/>'
+     + '<rect x="43" y="81" width="22" height="95" rx="11"/>'
+     + '<rect x="135" y="81" width="22" height="95" rx="11"/>',
+  jacket: '<rect x="61" y="76" width="37" height="99" rx="13"/>'
+     + '<rect x="102" y="76" width="37" height="99" rx="13"/>'
+     + '<rect x="43" y="80" width="22" height="95" rx="11"/>'
+     + '<rect x="135" y="80" width="22" height="95" rx="11"/>',
+  coat: '<rect x="60" y="74" width="38" height="150" rx="13"/>'
+     + '<rect x="102" y="74" width="38" height="150" rx="13"/>'
+     + '<rect x="42" y="78" width="22" height="104" rx="11"/>'
+     + '<rect x="136" y="78" width="22" height="104" rx="11"/>',
+
+  jeans: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
+     + '<rect x="75" y="178" width="24" height="142" rx="10"/>'
+     + '<rect x="101" y="178" width="24" height="142" rx="10"/>',
+  pants: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
+     + '<rect x="75" y="178" width="24" height="142" rx="10"/>'
+     + '<rect x="101" y="178" width="24" height="142" rx="10"/>',
+  leggings: '<rect x="73" y="154" width="54" height="36" rx="12"/>'
+     + '<rect x="78" y="178" width="20" height="142" rx="9"/>'
+     + '<rect x="102" y="178" width="20" height="142" rx="9"/>',
+  shorts: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
+     + '<rect x="75" y="178" width="24" height="62" rx="10"/>'
+     + '<rect x="101" y="178" width="24" height="62" rx="10"/>',
+  skirt: '<path d="M73,154 h54 l15,88 a7,7 0 0 1 -7,8 h-70 a7,7 0 0 1 -7,-8 Z"/>',
+
+  sneakers: '<rect x="70" y="304" width="31" height="24" rx="10"/>'
+     + '<rect x="99" y="304" width="31" height="24" rx="10"/>',
+  boots: '<rect x="71" y="278" width="29" height="50" rx="9"/>'
+     + '<rect x="100" y="278" width="29" height="50" rx="9"/>',
+  sandals: '<rect x="71" y="312" width="29" height="15" rx="7"/>'
+     + '<rect x="100" y="312" width="29" height="15" rx="7"/>',
+  dressshoes: '<rect x="70" y="308" width="31" height="20" rx="8"/>'
+     + '<rect x="99" y="308" width="31" height="20" rx="8"/>',
+
+  beanie: '<ellipse cx="100" cy="31" rx="25" ry="21"/>'
+     + '<rect x="75" y="35" width="50" height="12" rx="6"/>',
+  cap: '<ellipse cx="100" cy="30" rx="24" ry="20"/>'
+     + '<rect x="98" y="37" width="44" height="9" rx="4.5"/>',
+};
+
+/* Thumbnails crop to the garment, not the whole figure. Full-length pieces
+   need their own box or the skirt falls outside it. */
+const THUMB_BOX = {
+  dress:[36,68,128,196], coat:[34,66,132,168], skirt:[46,146,108,110],
+  jeans:[62,146,76,182], pants:[62,146,76,182], leggings:[62,146,76,182],
+  shorts:[62,146,76,102], boots:[60,270,80,66],
+};
+const CAT_BOX = {
+  hat:[68,6,64,52], top:[36,68,128,112], outer:[34,68,132,116],
+  bottom:[58,146,84,186], shoes:[62,296,76,40],
+};
+
+/* Paint a garment: photo-filled when one exists, flat colour otherwise. */
+let clipSeq = 0;
+function garment(item, scope){
+  const shape = SHAPES[item.kind];
+  if(!shape) return '';
+  /* A light outline, not a dark one: garments sit on a dark surface, so black
+     clothes would otherwise dissolve into the background. */
+  const edge = 'stroke="rgba(255,255,255,.30)" stroke-width="1.4"';
+  const photo = PHOTOS[item.id];
+  if(!photo) return '<g fill="'+item.hex+'" '+edge+'>'+shape+'</g>';
+
+  const cid = 'cl'+(scope||'')+(++clipSeq);
+  return '<clipPath id="'+cid+'">'+shape+'</clipPath>'
+       + '<g clip-path="url(#'+cid+')">'
+         + '<image href="'+photo+'" x="0" y="0" width="200" height="380" preserveAspectRatio="xMidYMid slice"/>'
+       + '</g>'
+       + '<g fill="none" '+edge+'>'+shape+'</g>';
+}
+
+/* The doll. `outfit` maps category → item id. */
+function doll(outfit, opts){
+  const o = opts || {};
+  const worn = SLOT_ORDER.map(cat=>{
+    const it = itemById(outfit[cat]);
+    return it ? garment(it, o.scope) : '';
+  }).join('');
+
+  const hit = o.interactive ? SLOT_ORDER.map(cat=>{
+    const zones = {
+      hat:    [66,2,68,54],
+      top:    [42,72,116,102],
+      outer:  [42,72,116,102],
+      bottom: [66,176,68,120],
+      shoes:  [64,296,72,42],
+    }[cat];
+    if(cat==='outer') return '';                       // top zone covers both
+    return '<rect class="dollhit" data-slot="'+cat+'" x="'+zones[0]+'" y="'+zones[1]
+         + '" width="'+zones[2]+'" height="'+zones[3]+'" rx="10"><title>'+cat+'</title></rect>';
+  }).join('') : '';
+
+  /* A light mannequin tone — bare arms and legs have to read as skin, not as
+     another dark garment. */
+  return '<svg class="doll" viewBox="0 0 200 380" role="img" aria-label="Outfit preview">'
+    + '<g fill="#a9a09a" stroke="rgba(0,0,0,.30)" stroke-width="1.2">'+BODY+'</g>'
+    + worn + hit
+    + '</svg>';
+}
+
+/* A single garment drawn small, for wardrobe tiles. */
+function itemThumb(item){
+  const box = THUMB_BOX[item.kind] || CAT_BOX[GARMENTS[item.kind].cat];
+  const vb = box[0]+' '+box[1]+' '+box[2]+' '+box[3];
+  return '<svg class="thumb" viewBox="'+vb+'" role="img" aria-label="'+esc(item.name)+'">'
+    + garment(item,'t') + '</svg>';
+}
+
+/* =========================================================================
+   WARDROBE — view
+   ========================================================================= */
+let closetPid = null, closetDow = null, closetCat = 'all', closetStored = false;
+
+function closetPerson(){
+  if(closetPid && S.people.some(p=>p.id===closetPid)) return closetPid;
+  closetPid = S.people[0] ? S.people[0].id : null;
+  return closetPid;
+}
+function closetDay(){
+  if(closetDow===null || closetDow===undefined) closetDow = todayDow();
+  return closetDow;
+}
+function pickPerson(id){ closetPid = id; render(); }
+function pickDay(d){ closetDow = d; render(); }
+function pickCat(c){ closetCat = c; render(); }
+function toggleStored(){ closetStored = !closetStored; render(); }
+
+function addItem({personId, kind, name, hex, season}){
+  const it = { id:uid('w'), personId, kind, name, hex, season:season||'all', stored:false, photo:false };
+  S.wardrobe.push(it);
+  commit();
+  return it;
+}
+function removeItem(id){
+  const it = itemById(id);
+  if(!it) return;
+  if(!confirm('Remove “'+it.name+'” from the wardrobe?')) return;
+  dropPhoto(id);
+  S.wardrobe = S.wardrobe.filter(w=>w.id!==id);
+  // and clear it out of any planned outfit
+  Object.values(S.plans).forEach(days=>Object.values(days).forEach(o=>{
+    Object.keys(o).forEach(c=>{ if(o[c]===id) delete o[c]; });
+  }));
+  commit();
+}
+function toggleStore(id){
+  const it = itemById(id);
+  if(!it) return;
+  it.stored = !it.stored;
+  if(it.stored){
+    Object.values(S.plans).forEach(days=>Object.values(days).forEach(o=>{
+      Object.keys(o).forEach(c=>{ if(o[c]===id) delete o[c]; });
+    }));
+  }
+  commit();
+}
+function packSeason(pid, season){
+  const hit = itemsFor(pid).filter(w=>w.season===season && !w.stored);
+  if(!hit.length){ toast('Nothing in '+season+' left to pack.','bad'); return; }
+  if(!confirm('Pack away '+hit.length+' '+season+' item'+(hit.length===1?'':'s')+'? '
+    + 'They stay in the catalogue but drop out of outfit planning.')) return;
+  hit.forEach(w=>{ w.stored = true; });
+  Object.values(S.plans).forEach(days=>Object.values(days).forEach(o=>{
+    Object.keys(o).forEach(c=>{ if(hit.some(w=>w.id===o[c])) delete o[c]; });
+  }));
+  commit();
+  toast('Packed away '+hit.length+' '+season+' item'+(hit.length===1?'':'s')+'.','good');
+}
+function clearDay(pid,dow){
+  if(S.plans[pid]) delete S.plans[pid][dow];
+  commit();
+}
+function copyYesterday(pid,dow){
+  const prev = (dow+6)%7;
+  const src = planFor(pid,prev);
+  if(!Object.keys(src).length){ toast('Nothing planned for '+DAYS_LONG[prev]+' to copy.','bad'); return; }
+  S.plans[pid] = S.plans[pid] || {};
+  S.plans[pid][dow] = { ...src };
+  commit();
+}
+
+function closetView(){
+  if(!S.people.length){
+    return '<div class="section-label">Wardrobe</div>'
+      + '<div class="panel"><div class="empty">Add someone under ⚙ Settings first — '
+      + 'a wardrobe belongs to a person.</div></div>';
+  }
+  const pid = closetPerson(), dow = closetDay();
+  const person = subjectOf(pid);
+  const mine = itemsFor(pid);
+  const outfit = planFor(pid,dow);
+
+  const pchips = S.people.map(p=>
+    '<button class="chip" onclick="pickPerson(\''+p.id+'\')" aria-pressed="'+(p.id===pid)+'"'
+    + ' style="--cc:'+p.hex+'"><span class="av" style="--oc:'+p.hex+';--ai:'+ink(p.hex)+'">'
+    + esc(p.initials)+'</span>'+esc(p.name)+'</button>').join('');
+
+  // week strip — a mini doll per day
+  const strip = DAYS.map((d,i)=>{
+    const o = planFor(pid,i), n = Object.keys(o).length;
+    return '<button class="daycard'+(i===dow?' sel':'')+(i===todayDow()?' today':'')+'"'
+      + ' onclick="pickDay('+i+')" aria-pressed="'+(i===dow)+'">'
+      + '<span class="dl">'+d+'</span>'
+      + '<span class="dv">'+(n ? doll(o,{scope:'s'+i}) : '<span class="dnone">+</span>')+'</span>'
+      + '</button>';
+  }).join('');
+
+  // the slot list beside the doll
+  const slots = CATS.map(c=>{
+    const it = itemById(outfit[c.id]);
+    return '<div class="slot'+(it?'':' empty')+'">'
+      + '<span class="sc">'+c.name.replace(/s$/,'')+'</span>'
+      + (it
+          ? '<span class="sv">'+itemThumb(it)+'<b>'+esc(it.name)+'</b></span>'
+            + '<button class="btn sm ghost" onclick="setSlot(\''+pid+'\','+dow+',\''+c.id+'\',\''+it.id+'\')">Clear</button>'
+          : '<span class="sv none">nothing picked</span>')
+      + '</div>';
+  }).join('');
+
+  // wardrobe grid
+  const visible = mine
+    .filter(w=>closetStored ? w.stored : !w.stored)
+    .filter(w=>closetCat==='all' ? true : GARMENTS[w.kind].cat===closetCat);
+  const grid = visible.length
+    ? visible.map(w=>{
+        const cat = GARMENTS[w.kind].cat;
+        const on  = outfit[cat]===w.id;
+        return '<div class="wcard'+(on?' on':'')+(w.stored?' stored':'')+'">'
+          + '<button class="wpick" onclick="setSlot(\''+pid+'\','+dow+',\''+cat+'\',\''+w.id+'\')"'
+            + ' aria-pressed="'+on+'" title="'+(on?'Remove from':'Wear on')+' '+DAYS_LONG[dow]+'">'
+            + itemThumb(w)
+            + '<span class="wn">'+esc(w.name)+'</span>'
+            + '<span class="wm">'+GARMENTS[w.kind].name
+              + (w.season!=='all' ? ' · '+w.season : '')
+              + (w.photo ? ' · 📷' : '')+'</span>'
+          + '</button>'
+          + '<div class="wacts">'
+            + '<label class="btn sm ghost cam">'+(w.photo?'Replace':'📷 Photo')
+              + '<input type="file" accept="image/*" onchange="attachPhoto(\''+w.id+'\',this.files[0]);this.value=\'\'"></label>'
+            + (w.photo ? '<button class="btn sm ghost" onclick="dropPhoto(\''+w.id+'\')">Clear photo</button>' : '')
+            + '<button class="btn sm ghost" onclick="toggleStore(\''+w.id+'\')">'+(w.stored?'Unpack':'Pack away')+'</button>'
+            + '<button class="btn sm ghost del" onclick="removeItem(\''+w.id+'\')">✕</button>'
+          + '</div>'
+        + '</div>';
+      }).join('')
+    : '<div class="empty">'+(closetStored
+        ? 'Nothing packed away.'
+        : mine.length ? 'Nothing here in this category.' : 'This wardrobe is empty — add a few starters below.')+'</div>';
+
+  const catTabs = '<button class="chip sm" onclick="pickCat(\'all\')" aria-pressed="'+(closetCat==='all')+'">All</button>'
+    + CATS.map(c=>'<button class="chip sm" onclick="pickCat(\''+c.id+'\')" aria-pressed="'+(closetCat===c.id)+'">'
+      + c.name+'</button>').join('');
+
+  const starters = STARTERS.map((s,i)=>
+    '<button class="chip sm" onclick="addStarter('+i+')">+ '+esc(s.name)+'</button>').join('');
+
+  const packBtns = SEASONS.filter(s=>s.id!=='all').map(s=>{
+    const n = mine.filter(w=>w.season===s.id && !w.stored).length;
+    return '<button class="chip sm" onclick="packSeason(\''+pid+'\',\''+s.id+'\')"'
+      + (n?'':' disabled')+'>Pack '+s.name.toLowerCase()+(n?' ('+n+')':'')+'</button>';
+  }).join('');
+
+  const storedN = mine.filter(w=>w.stored).length;
+
+  return '<div class="section-label">Wardrobe</div>'
+    + '<div class="chips" style="margin-bottom:12px">'+pchips+'</div>'
+    + '<div class="panel"><h3>'+esc(person.name)+'’s week</h3>'
+      + '<p class="cap">Pick a day, then tap items below to dress the doll. '
+      + 'Tap a worn item again to take it off.</p>'
+      + '<div class="strip">'+strip+'</div></div>'
+
+    + '<div class="closet">'
+      + '<div class="panel dollpane">'
+        + '<h3>'+DAYS_LONG[dow]+(dow===todayDow()?' — today':'')+'</h3>'
+        + '<p class="cap">'+(Object.keys(outfit).length ? 'Planned outfit' : 'Nothing planned yet')+'</p>'
+        + '<div class="dollwrap">'+doll(outfit,{scope:'main'})+'</div>'
+        + '<div class="slots">'+slots+'</div>'
+        + '<div class="chips" style="margin-top:12px">'
+          + '<button class="chip sm" onclick="copyYesterday(\''+pid+'\','+dow+')">Copy '+DAYS[(dow+6)%7]+'</button>'
+          + '<button class="chip sm" onclick="clearDay(\''+pid+'\','+dow+')">Clear day</button>'
+        + '</div>'
+      + '</div>'
+
+      + '<div class="panel wardpane">'
+        + '<h3>'+(closetStored ? 'Packed away' : 'In rotation')+'</h3>'
+        + '<p class="cap">'+visible.length+' item'+(visible.length===1?'':'s')
+          + (storedN && !closetStored ? ' · '+storedN+' packed away' : '')+'</p>'
+        + '<div class="chips" style="margin-bottom:10px">'+catTabs
+          + '<button class="chip sm" onclick="toggleStored()" aria-pressed="'+closetStored+'">'
+          + (closetStored?'← In rotation':'Packed ('+storedN+')')+'</button></div>'
+        + '<div class="wgrid">'+grid+'</div>'
+        + '<div class="section-label" style="margin-top:18px">Add items</div>'
+        + '<div class="chips">'+starters
+          + '<button class="chip sm" onclick="openItem()">＋ Custom…</button></div>'
+        + '<div class="section-label" style="margin-top:18px">Out of season</div>'
+        + '<div class="chips">'+packBtns+'</div>'
+      + '</div>'
+    + '</div>';
+}
+
+function addStarter(i){
+  const s = STARTERS[i];
+  addItem({ personId:closetPerson(), kind:s.kind, name:s.name, hex:s.hex, season:s.season });
+  toast('Added '+s.name);
+}
+
+let itemKind = 'tee', itemHex = '#3f5b7c', itemSeason = 'all';
+function openItem(){
+  itemKind='tee'; itemHex='#3f5b7c'; itemSeason='all';
+  const kinds = Object.entries(GARMENTS).map(([k,g])=>
+    '<button type="button" class="chip sm" data-k="'+k+'" aria-pressed="'+(k===itemKind)+'">'
+    + g.name+'</button>').join('');
+  const cols = CLOTH.map(([h,n])=>
+    '<button type="button" class="sw2" data-h="'+h+'" title="'+n+'" aria-pressed="'+(h===itemHex)+'"'
+    + ' style="background:'+h+'"></button>').join('');
+  const seas = SEASONS.map(s=>
+    '<button type="button" class="chip sm" data-s="'+s.id+'" aria-pressed="'+(s.id===itemSeason)+'">'
+    + s.name+'</button>').join('');
+
+  dlg.innerHTML = '<div class="dlg">'
+    + '<h2>New wardrobe item</h2>'
+    + '<p class="hint">Pick a shape and colour now; add a real photo from the tile afterwards.</p>'
+    + '<div class="field"><label for="iname">Name</label>'
+      + '<input type="text" id="iname" placeholder="e.g. Grey school polo" autocomplete="off"></div>'
+    + '<div class="field"><label>Garment</label><div class="chips" id="ik">'+kinds+'</div></div>'
+    + '<div class="field"><label>Colour</label><div class="chips" id="ic">'+cols+'</div></div>'
+    + '<div class="field"><label>Season</label><div class="chips" id="is">'+seas+'</div></div>'
+    + '<footer><button class="btn ghost" onclick="closeDlg()">Cancel</button>'
+      + '<button class="btn primary" onclick="submitItem()">Add to wardrobe</button></footer>'
+    + '</div>';
+
+  const wire = (sel,attr,set)=> dlg.querySelectorAll(sel).forEach(b=> b.onclick = ()=>{
+    set(b.dataset[attr]);
+    dlg.querySelectorAll(sel).forEach(x=>x.setAttribute('aria-pressed', x===b));
+  });
+  wire('[data-k]','k',v=>itemKind=v);
+  wire('[data-h]','h',v=>itemHex=v);
+  wire('[data-s]','s',v=>itemSeason=v);
+
+  dlg.showModal();
+  const n = document.getElementById('iname');
+  n.focus();
+  n.onkeydown = e => { if(e.key==='Enter') submitItem(); };
+}
+function submitItem(){
+  const name = document.getElementById('iname').value.trim() || GARMENTS[itemKind].name;
+  addItem({ personId:closetPerson(), kind:itemKind, name, hex:itemHex, season:itemSeason });
+  dlg.close();
+  toast('Added '+name);
+}
+
+/* =========================================================================
    RENDER — setup + root
    ========================================================================= */
 function setupView(){
@@ -1619,6 +2242,8 @@ function finishSetup(){
 function render(){
   const app = document.getElementById('app');
   document.getElementById('fabbar').style.display = S.setup ? '' : 'none';
+  document.getElementById('fabbar').style.display =
+    (S.setup && view!=='closet') ? '' : 'none';
   ['.tabs','.deskadd','.top .btn.icon'].forEach(sel=>{
     const el = document.querySelector(sel);
     if(el) el.style.visibility = S.setup ? '' : 'hidden';
@@ -1630,10 +2255,13 @@ function render(){
     document.title = 'Laundry HQ';
     return;
   }
-  app.innerHTML = view==='board' ? boardView()
-                : view==='week'  ? weekView()
+  clipSeq = 0;
+  app.innerHTML = view==='board'  ? boardView()
+                : view==='week'   ? weekView()
+                : view==='closet' ? closetView()
                 : statsView();
   if(view==='board') wireDnD();
+  if(view==='closet') wireDoll();
 
   const n = active().filter(l=>l.stage!=='done').length;
   document.getElementById('tagline').textContent =
@@ -1643,9 +2271,16 @@ function render(){
 
 function setView(v){
   view = v;
-  ['board','week','stats'].forEach(t=>
+  ['board','week','closet','stats'].forEach(t=>
     document.getElementById('tab-'+t).setAttribute('aria-selected', v===t));
   render();
+}
+
+/* Tapping the doll jumps the wardrobe filter to that slot's category. */
+function wireDoll(){
+  document.querySelectorAll('.dollhit').forEach(el=>{
+    el.addEventListener('click', ()=> pickCat(el.dataset.slot));
+  });
 }
 
 /* =========================================================================
@@ -1862,6 +2497,13 @@ addEventListener('keydown', e=>{
 });
 
 render();
+
+/* Photos live in IndexedDB; pull them into memory then repaint so render()
+   can stay synchronous. Failure here is non-fatal — shapes fall back to
+   flat colour. */
+photoAll()
+  .then(all=>{ PHOTOS = all || {}; if(Object.keys(PHOTOS).length) render(); })
+  .catch(()=>{ /* private mode or blocked storage — colours still work */ });
 </script>
 </body>
 </html>
