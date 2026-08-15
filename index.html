@@ -1834,8 +1834,9 @@ async function attachPhoto(itemId, file){
     if(it){ it.photo = true; it.alpha = alpha; }
     commit();
     toast(alpha
-      ? 'Cut-out added — its own outline is used instead of the generic shape.'
-      : 'Photo added — it now fills the garment shape.', 'good');
+      ? 'Cut-out added — transparency kept, shown exactly as it is.'
+      : 'Photo added — shown as-is. Crop out the background for a clean cut-out.',
+      'good');
   }catch(e){
     toast('Could not read that photo: '+e.message,'bad');
   }
@@ -1943,46 +1944,35 @@ function shapeBBox(kind){
   }catch(e){ return fallback; }
 }
 
-/* Where a cut-out is allowed to sit. Deliberately roomier than the drawn
-   garment: real jeans photographed flat are wider than the doll's legs, and
-   should read as jeans on the figure rather than be squeezed into the shape. */
-const CUTOUT_BOX = {
-  hat:    [60,   2,  80,  56],
-  top:    [40,  68, 120, 110],
-  outer:  [36,  66, 128, 118],
-  bottom: [52, 150,  96, 176],
-  shoes:  [58, 292,  84,  46],
+/* Where a photographed garment sits on the figure. Generous on purpose — the
+   photo is fitted inside this box with its aspect ratio intact and is never
+   masked, so a real garment keeps its own proportions and outline. */
+const PHOTO_BOX = {
+  hat:    [54,   0,  92,  62],
+  top:    [32,  62, 136, 122],
+  outer:  [28,  60, 144, 130],
+  bottom: [46, 146, 108, 184],
+  shoes:  [52, 286,  96,  52],
 };
 
 /* Paint a garment: photo-filled when one exists, flat colour otherwise. */
-let clipSeq = 0;
-function garment(item, scope){
-  const shape = SHAPES[item.kind];
-  if(!shape) return '';
-  /* A light outline, not a dark one: garments sit on a dark surface, so black
-     clothes would otherwise dissolve into the background. */
-  const edge = 'stroke="rgba(255,255,255,.30)" stroke-width="1.4"';
+function garment(item){
   const photo = PHOTOS[item.id];
-  if(!photo) return '<g fill="'+item.hex+'" '+edge+'>'+shape+'</g>';
 
-  /* A cut-out already has its own silhouette — clipping it to the generic
-     shape would throw that away. Fit it into the slot and let it be itself. */
-  if(item.alpha){
-    const k = CUTOUT_BOX[GARMENTS[item.kind].cat];
+  /* A real photo REPLACES the drawn graphic outright. No generated shape is
+     used as a mask or an outline — masking the user's own image is what
+     distorted it. The drawn shapes are placeholders until a photo exists. */
+  if(photo){
+    const k = PHOTO_BOX[GARMENTS[item.kind].cat];
     return '<image href="'+photo+'" x="'+k[0]+'" y="'+k[1]+'" width="'+k[2]+'" height="'+k[3]
          + '" preserveAspectRatio="xMidYMid meet"/>';
   }
 
-  /* A normal photo is a rectangle, so it still gets clipped — but scaled to
-     the garment's own bounds, not stretched across the whole figure. */
-  const b = shapeBBox(item.kind);
-  const cid = 'cl'+(scope||'')+(++clipSeq);
-  return '<clipPath id="'+cid+'">'+shape+'</clipPath>'
-       + '<g clip-path="url(#'+cid+')">'
-         + '<image href="'+photo+'" x="'+b.x+'" y="'+b.y+'" width="'+b.w+'" height="'+b.h
-         + '" preserveAspectRatio="xMidYMid slice"/>'
-       + '</g>'
-       + '<g fill="none" '+edge+'>'+shape+'</g>';
+  const shape = SHAPES[item.kind];
+  if(!shape) return '';
+  /* A light outline, not a dark one: garments sit on a dark surface, so black
+     clothes would otherwise dissolve into the background. */
+  return '<g fill="'+item.hex+'" stroke="rgba(255,255,255,.30)" stroke-width="1.4">'+shape+'</g>';
 }
 
 /* The doll. `outfit` maps category → item id. */
@@ -1990,7 +1980,7 @@ function doll(outfit, opts){
   const o = opts || {};
   const worn = SLOT_ORDER.map(cat=>{
     const it = itemById(outfit[cat]);
-    return it ? garment(it, o.scope) : '';
+    return it ? garment(it) : '';
   }).join('');
 
   const hit = o.interactive ? SLOT_ORDER.map(cat=>{
@@ -2016,14 +2006,14 @@ function doll(outfit, opts){
 
 /* A single garment drawn small, for wardrobe tiles. */
 function itemThumb(item){
-  // a cut-out shows as itself — no silhouette to crop to
-  if(item.alpha && PHOTOS[item.id]){
+  // photographed items show the photo itself, never a cropped-to-blob version
+  if(PHOTOS[item.id]){
     return '<img class="thumb" src="'+PHOTOS[item.id]+'" alt="'+esc(item.name)+'">';
   }
   const b = shapeBBox(item.kind), p = 5;
   const vb = (b.x-p)+' '+(b.y-p)+' '+(b.w+2*p)+' '+(b.h+2*p);
   return '<svg class="thumb" viewBox="'+vb+'" role="img" aria-label="'+esc(item.name)+'">'
-    + garment(item,'t') + '</svg>';
+    + garment(item) + '</svg>';
 }
 
 /* =========================================================================
@@ -2317,7 +2307,6 @@ function render(){
     document.title = 'Laundry HQ';
     return;
   }
-  clipSeq = 0;
   app.innerHTML = view==='board'  ? boardView()
                 : view==='week'   ? weekView()
                 : view==='closet' ? closetView()

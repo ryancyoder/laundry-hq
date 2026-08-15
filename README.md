@@ -34,14 +34,14 @@ bottom, shoes. Tapping the doll jumps the wardrobe filter to that slot.
 - *Standard graphics* — 19 garment shapes (t-shirt, button-down, hoodie, jeans, skirt,
   boots, beanie…) in 14 clothing colours. Eight one-tap starters get a wardrobe usable
   in seconds.
-- *Real photos* — add a garment photo from its tile and it ties the catalogue to the
-  actual item in the drawer. Two cases, detected automatically:
-  - **A cut-out** (transparent PNG/WebP) keeps **its own outline**. The generic garment
-    shape is not used at all — the doll wears the real thing, exact silhouette included.
-    Transparency is preserved end to end; these are stored as WebP, falling back to PNG.
-  - **A normal photo** (JPEG, opaque PNG) is a rectangle, so it is clipped into the
-    garment's silhouette — but scaled to *that garment's* bounds, not stretched across
-    the whole figure.
+- *Real photos* — add a garment photo from its tile and it **replaces** the drawn
+  graphic entirely. Nothing masks it, crops it, or reshapes it: the drawn garments are
+  placeholders that exist only until you have a photo. Your image is scaled to fit its
+  slot with its aspect ratio intact and drawn as-is.
+
+  Transparency is preserved end to end (stored as WebP, falling back to PNG), so a
+  cut-out PNG wears its own exact outline. An ordinary photo shows whatever background
+  it has — crop the background out beforehand and it will sit on the doll cleanly.
 - *Out of season* — mark items packed away, or bulk-pack a whole season. Packed items
   stay in the catalogue but drop out of outfit planning and are removed from any day
   they were already planned for.
