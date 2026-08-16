@@ -553,6 +553,16 @@ svg.doll{width:100%;max-width:230px;height:auto;display:block}
 .wacts .btn.del:hover{color:var(--crit);border-color:var(--crit)}
 .wacts .cam{position:relative;overflow:hidden}
 .wacts .cam input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+/* photo-modal source buttons. "Take photo" carries capture=, which sends
+   phones straight to the camera — useless on a laptop, so it is only shown
+   where a camera is likely (coarse pointer). "Choose photo" never carries
+   capture, so it always reaches the library / file picker. */
+.pm-src{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:4px}
+.pm-src label{position:relative;overflow:hidden;cursor:pointer}
+.pm-src input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+.pm-cam{display:none}
+@media (pointer:coarse){.pm-cam{display:inline-flex}}
+
 /* photo-modal canvas — smooth downscale */
 #pmCanvas{image-rendering:auto}
 
@@ -1912,7 +1922,8 @@ async function dropPhoto(itemId){
    =========================================================================
    Flow:
      1. User taps "📷 Photo" → openPhotoModal(itemId)
-     2. Modal shows clothing silhouette as dashed outline
+     2. Modal shows clothing silhouette as dashed outline, plus two sources:
+        "Choose photo" (library / files) and "Take photo" (camera, phones only)
      3. User picks a photo → pmLoad(file) draws it live, masked to the shape
      4. Zoom slider adjusts scale in real-time
      5. "Save" → pmSave() composites at 2× resolution, stores PNG in IndexedDB
@@ -1935,12 +1946,13 @@ function openPhotoModal(itemId){
     +'<canvas id="pmCanvas" width="200" height="380"'
       +' style="display:block;width:140px;height:266px;margin:12px auto;border-radius:10px;'
       +'background:var(--plane);border:1px solid var(--border)"></canvas>'
-    +'<div style="display:flex;gap:8px;justify-content:center;margin-bottom:4px">'
-      +'<label class="btn primary" style="position:relative;overflow:hidden;cursor:pointer">'
-        +'📷 Choose / take photo'
+    +'<div class="pm-src">'
+      +'<label class="btn primary">🖼️ Choose photo'
+        +'<input type="file" accept="image/*"'
+          +' onchange="pmPick(this)"></label>'
+      +'<label class="btn pm-cam">📷 Take photo'
         +'<input type="file" accept="image/*" capture="environment"'
-          +' style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0"'
-          +' onchange="pmLoad(this.files[0]);this.value=\'\'"></label>'
+          +' onchange="pmPick(this)"></label>'
     +'</div>'
     +'<div id="pmCtrls"></div>'
     +'<footer class="dlg">'
@@ -1979,6 +1991,14 @@ function _pmDrawPlaceholder(){
   img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
+/* Cancelling the picker can still fire change with an empty list — say nothing
+   then. Reset value afterwards so re-picking the same file fires again. */
+function pmPick(input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(file) pmLoad(file);
+}
+
 function pmLoad(file){
   if(!file || !/^image\//.test(file.type)){ toast('That file isn\'t an image.','bad'); return; }
   const url = URL.createObjectURL(file);
@@ -1999,7 +2019,10 @@ function pmLoad(file){
     if(btn) btn.style.display = '';
     pmDraw();
   };
-  img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that photo.','bad'); };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    toast('Could not read that photo — try a JPEG or PNG.','bad');
+  };
   img.src = url;
 }
 
