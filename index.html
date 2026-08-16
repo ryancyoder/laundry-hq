@@ -554,6 +554,60 @@ svg.doll{width:100%;max-width:230px;height:auto;display:block}
 .wacts .cam{position:relative;overflow:hidden}
 .wacts .cam input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
 
+/* ---------- mix & match ---------- */
+.closethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.closethead .chips{flex:1;min-width:0}
+.tabs.modes{padding:3px;flex:none}
+.tabs.modes button{padding:7px 13px;font-size:12.5px}
+
+.mix{display:grid;gap:12px;grid-template-columns:minmax(0,286px) minmax(0,1fr);align-items:start;margin-top:12px}
+@media (max-width:700px){.mix{grid-template-columns:1fr}}
+.mixacts{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+
+.band{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--grid)}
+.band:last-child{border-bottom:0}
+.band.locked{background:linear-gradient(90deg,color-mix(in oklab,var(--s4) 9%,transparent),transparent 40%)}
+.bhead{display:flex;align-items:center;gap:7px;width:88px;flex:none}
+.bhead .lock{
+  appearance:none;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:8px;width:28px;height:28px;flex:none;cursor:pointer;font-size:12px;
+  display:grid;place-items:center;transition:.14s;
+}
+.bhead .lock:hover{border-color:var(--border-2)}
+.bhead .lock[aria-pressed="true"]{border-color:var(--s4);background:color-mix(in oklab,var(--s4) 22%,var(--surface-2))}
+.blabel{font-size:10.5px;font-weight:750;letter-spacing:.7px;text-transform:uppercase;color:var(--muted)}
+.band.locked .blabel{color:var(--s4)}
+
+.bstrip{
+  flex:1;min-width:0;display:flex;gap:7px;align-items:stretch;
+  overflow-x:auto;scroll-snap-type:x mandatory;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 0;
+}
+.bstrip::-webkit-scrollbar{display:none}
+/* Only the trailing spacer is wide. A wide leading one would leave every row
+   half empty at rest, since the first cell starts selected. */
+.bspace{flex:none;width:6px}
+.bspace.tail{width:calc(50% - 42px)}
+.bcell{
+  flex:none;width:78px;scroll-snap-align:center;cursor:pointer;font:inherit;color:inherit;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+  padding:6px 4px 5px;display:flex;flex-direction:column;align-items:center;gap:3px;transition:.14s;
+}
+.bcell:hover{border-color:var(--border-2)}
+.bcell.on{border-color:var(--s1);background:color-mix(in oklab,var(--s1) 15%,var(--surface-2))}
+.bcell.off{opacity:.5}
+.bcell svg.thumb,.bcell img.thumb{width:100%;max-width:60px;height:50px}
+.bcell .bnone{
+  width:100%;height:50px;display:grid;place-items:center;color:var(--muted);
+  font-size:10.5px;border:1px dashed var(--border);border-radius:7px;
+}
+.bcell .bn{
+  font-size:9.5px;color:var(--muted);text-align:center;line-height:1.2;
+  width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.bcell.on .bn{color:var(--ink)}
+.bempty{font-size:11.5px;color:var(--muted);padding:16px 4px;font-style:italic}
+
 svg.thumb{display:block;overflow:visible}
 img.thumb{display:block;width:100%;max-width:74px;height:62px;object-fit:contain}
 .slot img.thumb{width:26px;height:26px;max-width:26px}
@@ -1680,11 +1734,11 @@ function weekView(){
    WARDROBE — model
    ========================================================================= */
 const CATS = [
-  { id:'hat',    name:'Hats'    },
-  { id:'outer',  name:'Outer'   },
-  { id:'top',    name:'Tops'    },
-  { id:'bottom', name:'Bottoms' },
-  { id:'shoes',  name:'Shoes'   },
+  { id:'hat',    name:'Hats',    slot:'Hat'    },
+  { id:'outer',  name:'Outer',   slot:'Outer'  },
+  { id:'top',    name:'Tops',    slot:'Top'    },
+  { id:'bottom', name:'Bottoms', slot:'Bottom' },
+  { id:'shoes',  name:'Shoes',   slot:'Shoes'  },
 ];
 const SLOT_ORDER = ['bottom','top','outer','shoes','hat'];   // back → front
 
@@ -2020,6 +2074,173 @@ function itemThumb(item){
    WARDROBE — view
    ========================================================================= */
 let closetPid = null, closetDow = null, closetCat = 'all', closetStored = false;
+let closetMode = 'grid';                       // 'grid' | 'mix'
+let mixDraft = {}, mixLocks = {};              // mix-and-match is a draft until saved
+
+/* Which season are we in — used so shuffle doesn't put anyone in a parka in July. */
+function nowSeason(){
+  const m = new Date().getMonth();
+  return m<=1||m===11 ? 'winter' : m<=4 ? 'spring' : m<=7 ? 'summer' : 'fall';
+}
+function seedDraft(){
+  mixDraft = { ...planFor(closetPerson(), closetDay()) };
+}
+function setMode(m){
+  closetMode = m;
+  if(m==='mix') seedDraft();
+  render();
+}
+function toggleLock(cat){
+  mixLocks[cat] = !mixLocks[cat];
+  render();
+}
+
+/* Items eligible for a slot: in rotation, and in season where possible. */
+function wearable(cat, seasonAware){
+  const all = itemsFor(closetPerson())
+    .filter(w=>!w.stored && GARMENTS[w.kind].cat===cat);
+  if(!seasonAware) return all;
+  const s = nowSeason();
+  const fit = all.filter(w=>w.season==='all' || w.season===s);
+  return fit.length ? fit : all;          // don't strand a slot with nothing to pick
+}
+
+function shuffleOutfit(){
+  let changed = 0;
+  CATS.forEach(c=>{
+    if(mixLocks[c.id]) return;
+    const pool = wearable(c.id, true);
+    if(!pool.length){ delete mixDraft[c.id]; return; }
+    // hats and jackets are optional — let the shuffle leave them off sometimes
+    const optional = (c.id==='hat' || c.id==='outer');
+    const picks = optional ? [null, ...pool] : pool;
+    const pick = picks[Math.floor(Math.random()*picks.length)];
+    if(pick) mixDraft[c.id] = pick.id; else delete mixDraft[c.id];
+    changed++;
+  });
+  if(!changed){ toast('Every band is locked — unlock one to shuffle.','bad'); return; }
+  render();
+}
+function saveDraft(){
+  const pid = closetPerson(), dow = closetDay();
+  if(!Object.keys(mixDraft).length){ toast('Nothing picked to save.','bad'); return; }
+  S.plans[pid] = S.plans[pid] || {};
+  S.plans[pid][dow] = { ...mixDraft };
+  commit();
+  toast('Saved to '+DAYS_LONG[dow]+'.','good');
+}
+function clearDraft(){ mixDraft = {}; render(); }
+function setDraft(cat, id){
+  if(mixDraft[cat] === id) delete mixDraft[cat];
+  else if(id) mixDraft[cat] = id;
+  else delete mixDraft[cat];
+  render();
+}
+
+function mixView(){
+  const pid = closetPerson(), dow = closetDay();
+  const season = nowSeason();
+
+  const bands = CATS.map(c=>{
+    const pool = wearable(c.id, false);
+    const cur  = mixDraft[c.id];
+    const locked = !!mixLocks[c.id];
+
+    const cells = '<div class="bspace"></div>'
+      + '<button class="bcell'+(!cur?' on':'')+'" data-cat="'+c.id+'" data-id=""'
+        + ' aria-pressed="'+(!cur)+'"><span class="bnone">none</span>'
+        + '<span class="bn">—</span></button>'
+      + pool.map(w=>{
+          const on = cur===w.id;
+          const off = w.season!=='all' && w.season!==season;
+          return '<button class="bcell'+(on?' on':'')+(off?' off':'')+'"'
+            + ' data-cat="'+c.id+'" data-id="'+w.id+'" aria-pressed="'+on+'"'
+            + ' title="'+esc(w.name)+(off?' — '+w.season:'')+'">'
+            + itemThumb(w) + '<span class="bn">'+esc(w.name)+'</span></button>';
+        }).join('')
+      + '<div class="bspace tail"></div>';
+
+    return '<div class="band'+(locked?' locked':'')+'">'
+      + '<div class="bhead">'
+        + '<button class="lock" onclick="toggleLock(\''+c.id+'\')" aria-pressed="'+locked+'"'
+          + ' title="'+(locked?'Unlock':'Lock')+' '+c.name+' when shuffling">'
+          + (locked?'🔒':'🔓')+'</button>'
+        + '<span class="blabel">'+c.slot+'</span>'
+      + '</div>'
+      + '<div class="bstrip" data-strip="'+c.id+'">'
+        + (pool.length ? cells : '<div class="bempty">No '+c.name.toLowerCase()+' in rotation</div>')
+      + '</div>'
+    + '</div>';
+  }).join('');
+
+  const planned = planFor(pid,dow);
+  const dirty = JSON.stringify(planned) !== JSON.stringify(mixDraft);
+
+  return '<div class="mix">'
+    + '<div class="panel mixdoll">'
+      + '<h3>'+DAYS_LONG[dow]+(dow===todayDow()?' — today':'')+'</h3>'
+      + '<p class="cap">'+(dirty ? 'Unsaved combination' : 'Matches the saved plan')+'</p>'
+      + '<div class="dollwrap" id="mixdoll">'+doll(mixDraft)+'</div>'
+      + '<div class="mixacts">'
+        + '<button class="btn primary wide" onclick="shuffleOutfit()">🎲 Shuffle</button>'
+        + '<button class="btn wide'+(dirty?' go':'')+'"'+(dirty?' style="--accent:var(--good)"':'')
+          + ' onclick="saveDraft()">Save to '+DAYS[dow]+'</button>'
+        + '<button class="btn ghost wide" onclick="clearDraft()">Clear</button>'
+      + '</div>'
+      + '<p class="cap" style="margin:10px 0 0">Shuffle picks '+season
+        + ' and all-year items, and skips anything locked or packed away.</p>'
+    + '</div>'
+    + '<div class="panel bands"><h3>Slide through the wardrobe</h3>'
+      + '<p class="cap">Drag a row to change that layer. Lock a row to keep it while shuffling.</p>'
+      + bands + '</div>'
+  + '</div>';
+}
+
+/* Bands scroll; only the doll repaints, so scroll position survives. */
+function wireBands(){
+  document.querySelectorAll('.bcell').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      setDraft(b.dataset.cat, b.dataset.id || null);
+    });
+  });
+  document.querySelectorAll('.bstrip').forEach(strip=>{
+    // start each row with its current pick centred
+    const on = strip.querySelector('.bcell.on');
+    if(on) on.scrollIntoView({block:'nearest', inline:'center'});
+
+    let t = null;
+    strip.addEventListener('scroll', ()=>{
+      clearTimeout(t);
+      t = setTimeout(()=>{
+        const r = strip.getBoundingClientRect(), cx = r.left + r.width/2;
+        let best = null, bd = Infinity;
+        strip.querySelectorAll('.bcell').forEach(c=>{
+          const b = c.getBoundingClientRect();
+          const d = Math.abs(b.left + b.width/2 - cx);
+          if(d < bd){ bd = d; best = c; }
+        });
+        if(!best) return;
+        const cat = best.dataset.cat, id = best.dataset.id || null;
+        if((mixDraft[cat]||null) === id) return;
+        if(id) mixDraft[cat] = id; else delete mixDraft[cat];
+        strip.querySelectorAll('.bcell').forEach(c=>{
+          const sel = c === best;
+          c.classList.toggle('on', sel);
+          c.setAttribute('aria-pressed', sel);
+        });
+        repaintMixDoll();
+      }, 120);
+    }, {passive:true});
+  });
+}
+function repaintMixDoll(){
+  const el = document.getElementById('mixdoll');
+  if(el) el.innerHTML = doll(mixDraft);
+  const pid = closetPerson(), dow = closetDay();
+  const dirty = JSON.stringify(planFor(pid,dow)) !== JSON.stringify(mixDraft);
+  const cap = document.querySelector('.mixdoll .cap');
+  if(cap) cap.textContent = dirty ? 'Unsaved combination' : 'Matches the saved plan';
+}
 
 function closetPerson(){
   if(closetPid && S.people.some(p=>p.id===closetPid)) return closetPid;
@@ -2030,8 +2251,8 @@ function closetDay(){
   if(closetDow===null || closetDow===undefined) closetDow = todayDow();
   return closetDow;
 }
-function pickPerson(id){ closetPid = id; render(); }
-function pickDay(d){ closetDow = d; render(); }
+function pickPerson(id){ closetPid = id; if(closetMode==='mix') seedDraft(); render(); }
+function pickDay(d){ closetDow = d; if(closetMode==='mix') seedDraft(); render(); }
 function pickCat(c){ closetCat = c; render(); }
 function toggleStored(){ closetStored = !closetStored; render(); }
 
@@ -2119,7 +2340,7 @@ function closetView(){
   const slots = CATS.map(c=>{
     const it = itemById(outfit[c.id]);
     return '<div class="slot'+(it?'':' empty')+'">'
-      + '<span class="sc">'+c.name.replace(/s$/,'')+'</span>'
+      + '<span class="sc">'+c.slot+'</span>'
       + (it
           ? '<span class="sv">'+itemThumb(it)+'<b>'+esc(it.name)+'</b></span>'
             + '<button class="btn sm ghost" onclick="setSlot(\''+pid+'\','+dow+',\''+c.id+'\',\''+it.id+'\')">Clear</button>'
@@ -2172,13 +2393,24 @@ function closetView(){
 
   const storedN = mine.filter(w=>w.stored).length;
 
-  return '<div class="section-label">Wardrobe</div>'
-    + '<div class="chips" style="margin-bottom:12px">'+pchips+'</div>'
-    + '<div class="panel"><h3>'+esc(person.name)+'’s week</h3>'
-      + '<p class="cap">Pick a day, then tap items below to dress the doll. '
-      + 'Tap a worn item again to take it off.</p>'
-      + '<div class="strip">'+strip+'</div></div>'
+  const modes = '<div class="tabs modes">'
+    + '<button onclick="setMode(\'grid\')" aria-selected="'+(closetMode==='grid')+'">Grid</button>'
+    + '<button onclick="setMode(\'mix\')" aria-selected="'+(closetMode==='mix')+'">Mix &amp; match</button>'
+    + '</div>';
 
+  const head = '<div class="section-label">Wardrobe</div>'
+    + '<div class="closethead">'
+      + '<div class="chips">'+pchips+'</div>'+modes
+    + '</div>'
+    + '<div class="panel"><h3>'+esc(person.name)+'’s week</h3>'
+      + '<p class="cap">'+(closetMode==='mix'
+          ? 'Pick a day, slide the rows below, then save the combination to it.'
+          : 'Pick a day, then tap items below to dress the doll. Tap a worn item again to take it off.')
+      + '</p><div class="strip">'+strip+'</div></div>';
+
+  if(closetMode==='mix') return head + mixView();
+
+  return head
     + '<div class="closet">'
       + '<div class="panel dollpane">'
         + '<h3>'+DAYS_LONG[dow]+(dow===todayDow()?' — today':'')+'</h3>'
@@ -2312,7 +2544,7 @@ function render(){
                 : view==='closet' ? closetView()
                 : statsView();
   if(view==='board') wireDnD();
-  if(view==='closet') wireDoll();
+  if(view==='closet') closetMode==='mix' ? wireBands() : wireDoll();
 
   const n = active().filter(l=>l.stage!=='done').length;
   document.getElementById('tagline').textContent =

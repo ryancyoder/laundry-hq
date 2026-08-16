@@ -47,6 +47,17 @@ bottom, shoes. Tapping the doll jumps the wardrobe filter to that slot.
   they were already planned for.
 - *The week* — seven mini dolls across the top, one per day, so a week of outfits is
   visible at a glance. "Copy \<yesterday\>" and "Clear day" for fast planning.
+- *Mix & match* — a second layout that splits the figure into five horizontal bands,
+  head to feet: hat, outer, top, bottom, shoes. Drag a band sideways to slide through
+  that layer of the wardrobe and the doll reassembles live, flip-book style.
+  - **🎲 Shuffle** spins every band at once. It draws only from what is in rotation and
+    in season (current season plus all-year items, falling back to everything if that
+    would strand a slot), and treats hats and jackets as optional so you don't get a
+    hat every time.
+  - **Lock a band** to hold that layer while the rest shuffles — "I'm wearing these
+    jeans, show me what goes with them." Without locks a random generator gets old fast.
+  - Sliding is browsing only. Nothing touches your plan until you hit **Save to \<day\>**,
+    so shuffling can't destroy an outfit you already set.
 
 **Stats** — loads in flight, folding backlog, weekly total vs. the week before, average
 turnaround, a 14-day column chart, a bar chart per person and household item, and the
