@@ -553,6 +553,8 @@ svg.doll{width:100%;max-width:230px;height:auto;display:block}
 .wacts .btn.del:hover{color:var(--crit);border-color:var(--crit)}
 .wacts .cam{position:relative;overflow:hidden}
 .wacts .cam input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+/* photo-modal canvas — smooth downscale */
+#pmCanvas{image-rendering:auto}
 
 /* ---------- mix & match ---------- */
 .closethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
@@ -1762,6 +1764,8 @@ const GARMENTS = {
   dressshoes: { cat:'shoes',  name:'Dress shoes'  },
   beanie:     { cat:'hat',    name:'Beanie'       },
   cap:        { cat:'hat',    name:'Cap'          },
+  socks:      { cat:'shoes',  name:'Socks'        },
+  briefs:     { cat:'bottom', name:'Underwear'    },
 };
 
 const SEASONS = [
@@ -1904,6 +1908,199 @@ async function dropPhoto(itemId){
 }
 
 /* =========================================================================
+   PHOTO UPLOAD MODAL — canvas masking to clothing shape
+   =========================================================================
+   Flow:
+     1. User taps "📷 Photo" → openPhotoModal(itemId)
+     2. Modal shows clothing silhouette as dashed outline
+     3. User picks a photo → pmLoad(file) draws it live, masked to the shape
+     4. Zoom slider adjusts scale in real-time
+     5. "Save" → pmSave() composites at 2× resolution, stores PNG in IndexedDB
+        and marks item.masked = true so the doll renders it at x=0,y=0.
+   ========================================================================= */
+let _pmItemId = null, _pmImg = null, _pmScale = 1, _pmDrawSeq = 0;
+const _pmMaskCache = {};   // caches white-fill SVG→Image per garment kind
+
+function openPhotoModal(itemId){
+  const it = itemById(itemId);
+  if(!it) return;
+  _pmItemId = itemId;
+  _pmImg = null;
+  _pmScale = 1;
+
+  dlg.innerHTML = '<div class="dlg">'
+    +'<h2>📷 '+esc(GARMENTS[it.kind] ? GARMENTS[it.kind].name : it.kind)+' photo</h2>'
+    +'<p class="hint">Your photo will be cropped and fitted to the clothing shape automatically. '
+      +'Works best on a solid or plain background.</p>'
+    +'<canvas id="pmCanvas" width="200" height="380"'
+      +' style="display:block;width:140px;height:266px;margin:12px auto;border-radius:10px;'
+      +'background:var(--plane);border:1px solid var(--border)"></canvas>'
+    +'<div style="display:flex;gap:8px;justify-content:center;margin-bottom:4px">'
+      +'<label class="btn primary" style="position:relative;overflow:hidden;cursor:pointer">'
+        +'📷 Choose / take photo'
+        +'<input type="file" accept="image/*" capture="environment"'
+          +' style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0"'
+          +' onchange="pmLoad(this.files[0]);this.value=\'\'"></label>'
+    +'</div>'
+    +'<div id="pmCtrls"></div>'
+    +'<footer class="dlg">'
+      +'<button class="btn" onclick="closeDlg()">Cancel</button>'
+      +'<button class="btn primary" id="pmSaveBtn" style="display:none" onclick="pmSave()">Save photo</button>'
+    +'</footer>'
+  +'</div>';
+
+  dlg.showModal();
+  _pmDrawPlaceholder();
+}
+
+function _pmDrawPlaceholder(){
+  const it = itemById(_pmItemId);
+  if(!it) return;
+  const canvas = document.getElementById('pmCanvas');
+  if(!canvas) return;
+  const shape = SHAPES[it.kind];
+  if(!shape){ canvas.getContext('2d').clearRect(0,0,200,380); return; }
+
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
+    +'<g fill="'+it.hex+'22" stroke="'+it.hex+'" stroke-width="1.5" stroke-dasharray="6 4">'+shape+'</g>'
+    +'</svg>';
+  const img = new Image();
+  img.onload = () => {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 200, 380);
+    ctx.drawImage(img, 0, 0);
+    const b = shapeBBox(it.kind);
+    const ty = Math.min(b.y + b.h + 22, 362);
+    ctx.fillStyle = 'rgba(255,255,255,.38)';
+    ctx.font = 'bold 11px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Upload a photo to fill this shape', 100, ty);
+  };
+  img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+function pmLoad(file){
+  if(!file || !/^image\//.test(file.type)){ toast('That file isn\'t an image.','bad'); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    _pmImg = img;
+    _pmScale = 1;
+    URL.revokeObjectURL(url);
+    const ctrl = document.getElementById('pmCtrls');
+    if(ctrl) ctrl.innerHTML = '<div class="field">'
+      +'<label style="display:flex;justify-content:space-between">'
+        +'<span>Zoom</span><span id="pmSV">100%</span></label>'
+      +'<input type="range" id="pmSlider" min="50" max="300" value="100" style="width:100%"'
+        +' oninput="_pmScale=this.value/100;'
+          +'document.getElementById(\'pmSV\').textContent=this.value+\'%\';pmDraw()">'
+      +'</div>';
+    const btn = document.getElementById('pmSaveBtn');
+    if(btn) btn.style.display = '';
+    pmDraw();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that photo.','bad'); };
+  img.src = url;
+}
+
+function _pmGetMask(kind){
+  if(_pmMaskCache[kind]) return Promise.resolve(_pmMaskCache[kind]);
+  const shape = SHAPES[kind];
+  if(!shape) return Promise.resolve(null);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => { _pmMaskCache[kind] = img; res(img); };
+    img.onerror = rej;
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
+      +'<g fill="white">'+shape+'</g></svg>');
+  });
+}
+
+async function pmDraw(){
+  const seq = ++_pmDrawSeq;
+  const it = itemById(_pmItemId);
+  if(!it || !_pmImg) return;
+  const canvas = document.getElementById('pmCanvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  try{
+    const mask = await _pmGetMask(it.kind);
+    if(!mask || seq !== _pmDrawSeq) return;
+
+    const b = shapeBBox(it.kind);
+    const baseS = Math.max(b.w / _pmImg.width, b.h / _pmImg.height) * _pmScale;
+    const pw = _pmImg.width * baseS, ph = _pmImg.height * baseS;
+    const px = b.x + (b.w - pw) / 2, py = b.y + (b.h - ph) / 2;
+
+    /* Composite photo + mask on a temp canvas to avoid clearing the visible
+       canvas mid-draw (prevents flicker when the slider fires rapidly). */
+    const tmp = document.createElement('canvas');
+    tmp.width = 200; tmp.height = 380;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(_pmImg, px, py, pw, ph);
+    tc.globalCompositeOperation = 'destination-in';
+    tc.drawImage(mask, 0, 0);
+
+    if(seq !== _pmDrawSeq) return;
+    ctx.clearRect(0, 0, 200, 380);
+    ctx.drawImage(tmp, 0, 0);
+
+    /* Overlay a subtle shape outline so the boundary is always visible. */
+    const ol = new Image();
+    ol.src = 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
+      +'<g fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.5">'+SHAPES[it.kind]+'</g></svg>');
+    await new Promise(r => { ol.onload = r; ol.onerror = r; });
+    if(seq !== _pmDrawSeq) return;
+    ctx.drawImage(ol, 0, 0);
+  }catch(e){ console.warn('pmDraw', e); }
+}
+
+async function pmSave(){
+  const it = itemById(_pmItemId);
+  if(!it || !_pmImg){ toast('No photo loaded yet.','bad'); return; }
+  const btn = document.getElementById('pmSaveBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  try{
+    const mask = await _pmGetMask(it.kind);
+    if(!mask) throw new Error('shape mask unavailable');
+
+    /* Render at 2× for crispness on HiDPI screens. */
+    const SCALE = 2, W = 200*SCALE, H = 380*SCALE;
+    const b = shapeBBox(it.kind);
+    const baseS = Math.max(b.w / _pmImg.width, b.h / _pmImg.height) * _pmScale * SCALE;
+    const pw = _pmImg.width * baseS, ph = _pmImg.height * baseS;
+    const px = b.x*SCALE + (b.w*SCALE - pw)/2;
+    const py = b.y*SCALE + (b.h*SCALE - ph)/2;
+
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(_pmImg, px, py, pw, ph);
+    ctx.globalCompositeOperation = 'destination-in';
+    /* Scale the mask to 2× on a temp canvas before compositing. */
+    const mc = document.createElement('canvas');
+    mc.width = W; mc.height = H;
+    mc.getContext('2d').drawImage(mask, 0, 0, W, H);
+    ctx.drawImage(mc, 0, 0);
+
+    const dataUrl = out.toDataURL('image/png');
+    await photoPut(it.id, dataUrl);
+    PHOTOS[it.id] = dataUrl;
+    it.photo = true;
+    it.alpha = true;
+    it.masked = true;   // signals the new rendering path in garment() / itemThumb()
+    commit();
+    dlg.close();
+    toast('Photo fitted to the '+GARMENTS[it.kind].name+' shape.','good');
+  }catch(e){
+    toast('Could not save: '+e.message,'bad');
+    if(btn){ btn.disabled = false; btn.textContent = 'Save photo'; }
+  }
+}
+
+/* =========================================================================
    WARDROBE — paper doll
    Shapes are plain elements with no fill; each is painted flat OR used as a
    clip so a real photo of the garment fills its silhouette.
@@ -1922,63 +2119,138 @@ const BODY = [
 ].join('');
 
 const SHAPES = {
-  tee: '<rect x="64" y="77" width="72" height="94" rx="15"/>'
-     + '<rect x="46" y="81" width="22" height="37" rx="11"/>'
-     + '<rect x="132" y="81" width="22" height="37" rx="11"/>',
-  longsleeve: '<rect x="64" y="77" width="72" height="94" rx="15"/>'
-     + '<rect x="47" y="81" width="21" height="92" rx="10.5"/>'
-     + '<rect x="132" y="81" width="21" height="92" rx="10.5"/>',
-  button: '<rect x="64" y="77" width="72" height="94" rx="8"/>'
-     + '<rect x="47" y="81" width="21" height="92" rx="10.5"/>'
-     + '<rect x="132" y="81" width="21" height="92" rx="10.5"/>',
-  sweater: '<rect x="62" y="75" width="76" height="98" rx="19"/>'
-     + '<rect x="45" y="79" width="23" height="94" rx="11.5"/>'
-     + '<rect x="132" y="79" width="23" height="94" rx="11.5"/>',
-  dress: '<rect x="64" y="77" width="72" height="80" rx="15"/>'
-     + '<rect x="46" y="81" width="22" height="36" rx="11"/>'
-     + '<rect x="132" y="81" width="22" height="36" rx="11"/>'
-     + '<path d="M66,146 h68 l17,102 a7,7 0 0 1 -7,8 h-88 a7,7 0 0 1 -7,-8 Z"/>',
+  /* ===== TOPS ===== */
+  // Crew-neck tee: contoured body + angled short sleeves
+  tee:
+    '<path d="M84,73 Q91,82 100,82 Q109,82 116,73 Q125,76 132,82 L132,171 Q100,178 68,171 L68,82 Q75,76 84,73 Z"/>'
+    +'<path d="M68,82 L44,92 L44,119 Q48,123 53,121 L71,110 Z"/>'
+    +'<path d="M132,82 L156,92 L156,119 Q152,123 147,121 L129,110 Z"/>',
 
-  hoodie: '<ellipse cx="100" cy="72" rx="29" ry="17"/>'
-     + '<rect x="61" y="77" width="78" height="99" rx="17"/>'
-     + '<rect x="43" y="81" width="22" height="95" rx="11"/>'
-     + '<rect x="135" y="81" width="22" height="95" rx="11"/>',
-  jacket: '<rect x="61" y="76" width="37" height="99" rx="13"/>'
-     + '<rect x="102" y="76" width="37" height="99" rx="13"/>'
-     + '<rect x="43" y="80" width="22" height="95" rx="11"/>'
-     + '<rect x="135" y="80" width="22" height="95" rx="11"/>',
-  coat: '<rect x="60" y="74" width="38" height="150" rx="13"/>'
-     + '<rect x="102" y="74" width="38" height="150" rx="13"/>'
-     + '<rect x="42" y="78" width="22" height="104" rx="11"/>'
-     + '<rect x="136" y="78" width="22" height="104" rx="11"/>',
+  // Long sleeve: same body, full-length tapered sleeves
+  longsleeve:
+    '<path d="M84,73 Q91,82 100,82 Q109,82 116,73 Q125,76 132,82 L132,171 Q100,178 68,171 L68,82 Q75,76 84,73 Z"/>'
+    +'<path d="M68,82 L44,92 L46,171 Q49,175 54,175 L72,169 Z"/>'
+    +'<path d="M132,82 L156,92 L154,171 Q151,175 146,175 L128,169 Z"/>',
 
-  jeans: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
-     + '<rect x="75" y="178" width="24" height="142" rx="10"/>'
-     + '<rect x="101" y="178" width="24" height="142" rx="10"/>',
-  pants: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
-     + '<rect x="75" y="178" width="24" height="142" rx="10"/>'
-     + '<rect x="101" y="178" width="24" height="142" rx="10"/>',
-  leggings: '<rect x="73" y="154" width="54" height="36" rx="12"/>'
-     + '<rect x="78" y="178" width="20" height="142" rx="9"/>'
-     + '<rect x="102" y="178" width="20" height="142" rx="9"/>',
-  shorts: '<rect x="72" y="154" width="56" height="38" rx="12"/>'
-     + '<rect x="75" y="178" width="24" height="62" rx="10"/>'
-     + '<rect x="101" y="178" width="24" height="62" rx="10"/>',
-  skirt: '<path d="M73,154 h54 l15,88 a7,7 0 0 1 -7,8 h-70 a7,7 0 0 1 -7,-8 Z"/>',
+  // Button-down dress shirt: long sleeves + pointed collar wings
+  button:
+    '<path d="M84,73 Q91,82 100,82 Q109,82 116,73 Q125,76 132,82 L132,171 Q100,178 68,171 L68,82 Q75,76 84,73 Z"/>'
+    +'<path d="M68,82 L44,92 L46,171 Q49,175 54,175 L72,169 Z"/>'
+    +'<path d="M132,82 L156,92 L154,171 Q151,175 146,175 L128,169 Z"/>'
+    +'<path d="M84,73 L79,62 L100,80 Z"/>'
+    +'<path d="M116,73 L121,62 L100,80 Z"/>',
 
-  sneakers: '<rect x="70" y="304" width="31" height="24" rx="10"/>'
-     + '<rect x="99" y="304" width="31" height="24" rx="10"/>',
-  boots: '<rect x="71" y="278" width="29" height="50" rx="9"/>'
-     + '<rect x="100" y="278" width="29" height="50" rx="9"/>',
-  sandals: '<rect x="71" y="312" width="29" height="15" rx="7"/>'
-     + '<rect x="100" y="312" width="29" height="15" rx="7"/>',
-  dressshoes: '<rect x="70" y="308" width="31" height="20" rx="8"/>'
-     + '<rect x="99" y="308" width="31" height="20" rx="8"/>',
+  // Sweater: wider body + chunkier sleeves
+  sweater:
+    '<path d="M85,71 Q92,81 100,81 Q108,81 115,71 Q125,74 134,82 L134,174 Q100,181 66,174 L66,82 Q75,74 85,71 Z"/>'
+    +'<path d="M66,82 L40,93 L42,174 Q46,179 52,179 L70,172 Z"/>'
+    +'<path d="M134,82 L160,93 L158,174 Q154,179 148,179 L130,172 Z"/>',
 
-  beanie: '<ellipse cx="100" cy="31" rx="25" ry="21"/>'
-     + '<rect x="75" y="35" width="50" height="12" rx="6"/>',
-  cap: '<ellipse cx="100" cy="30" rx="24" ry="20"/>'
-     + '<rect x="98" y="37" width="44" height="9" rx="4.5"/>',
+  // Dress: fitted bodice + short sleeves + A-line skirt
+  dress:
+    '<path d="M84,73 Q91,82 100,82 Q109,82 116,73 Q124,76 130,82 L130,150 Q100,156 70,150 L70,82 Q76,76 84,73 Z"/>'
+    +'<path d="M70,82 L46,92 L46,119 Q50,123 55,121 L72,111 Z"/>'
+    +'<path d="M130,82 L154,92 L154,119 Q150,123 145,121 L128,111 Z"/>'
+    +'<path d="M70,150 Q100,156 130,150 L144,255 Q100,263 56,255 Z"/>',
+
+  /* ===== OUTERS ===== */
+  // Hoodie: rounded hood + bulky body + long sleeves
+  hoodie:
+    '<path d="M74,78 Q74,53 100,51 Q126,53 126,78 Q114,74 100,74 Q86,74 74,78 Z"/>'
+    +'<path d="M85,71 Q92,80 100,80 Q108,80 115,71 Q125,74 134,82 L134,176 Q100,183 66,176 L66,82 Q75,74 85,71 Z"/>'
+    +'<path d="M66,82 L40,93 L42,176 Q46,181 52,181 L70,174 Z"/>'
+    +'<path d="M134,82 L160,93 L158,176 Q154,181 148,181 L130,174 Z"/>',
+
+  // Jacket: open-front panels + lapels + long sleeves
+  jacket:
+    '<path d="M100,80 L100,177 Q83,181 68,178 L68,82 Q76,72 92,72 Z"/>'
+    +'<path d="M100,80 L100,177 Q117,181 132,178 L132,82 Q124,72 108,72 Z"/>'
+    +'<path d="M68,82 L40,93 L42,173 Q46,178 52,178 L72,171 Z"/>'
+    +'<path d="M132,82 L160,93 L158,173 Q154,178 148,178 L128,171 Z"/>'
+    +'<path d="M92,72 L86,61 L100,80 Z"/>'
+    +'<path d="M108,72 L114,61 L100,80 Z"/>',
+
+  // Coat: longer jacket, falls to mid-thigh
+  coat:
+    '<path d="M100,79 L100,228 Q82,232 66,229 L66,82 Q74,70 90,70 Z"/>'
+    +'<path d="M100,79 L100,228 Q118,232 134,229 L134,82 Q126,70 110,70 Z"/>'
+    +'<path d="M66,82 L38,93 L40,175 Q44,181 50,181 L70,173 Z"/>'
+    +'<path d="M134,82 L162,93 L160,175 Q156,181 150,181 L130,173 Z"/>'
+    +'<path d="M90,70 L84,58 L100,79 Z"/>'
+    +'<path d="M110,70 L116,58 L100,79 Z"/>',
+
+  /* ===== BOTTOMS ===== */
+  // Jeans: waistband with hip curve + two tapered legs
+  jeans:
+    '<path d="M74,150 Q100,143 126,150 L128,165 Q114,173 100,173 Q86,173 72,165 Z"/>'
+    +'<path d="M72,165 Q86,173 100,173 L97,321 Q96,325 92,325 L78,325 Q74,325 73,321 Z"/>'
+    +'<path d="M100,173 Q114,173 128,165 L127,321 Q126,325 122,325 L108,325 Q104,325 103,321 Z"/>',
+
+  // Pants: slightly wider, dressier cut
+  pants:
+    '<path d="M72,150 Q100,142 128,150 L130,166 Q115,175 100,175 Q85,175 70,166 Z"/>'
+    +'<path d="M70,166 Q85,175 100,175 L97,323 Q96,327 91,327 L77,327 Q73,327 72,323 Z"/>'
+    +'<path d="M100,175 Q115,175 130,166 L128,323 Q127,327 123,327 L109,327 Q105,327 103,323 Z"/>',
+
+  // Shorts: same waistband, legs cut at mid-thigh
+  shorts:
+    '<path d="M74,150 Q100,143 126,150 L128,165 Q114,173 100,173 Q86,173 72,165 Z"/>'
+    +'<path d="M72,165 Q86,173 100,173 L98,238 Q97,242 93,242 L79,242 Q75,242 74,238 Z"/>'
+    +'<path d="M100,173 Q114,173 128,165 L126,238 Q125,242 121,242 L107,242 Q103,242 102,238 Z"/>',
+
+  // Leggings: snug, no visible waistband
+  leggings:
+    '<path d="M75,150 Q100,144 125,150 L127,165 Q113,172 100,172 Q87,172 73,165 Z"/>'
+    +'<path d="M73,165 Q87,172 100,172 L98,321 Q97,324 94,324 L80,324 Q77,324 76,321 Z"/>'
+    +'<path d="M100,172 Q113,172 127,165 L124,321 Q123,324 120,324 L106,324 Q103,324 102,321 Z"/>',
+
+  // Skirt: narrow waistband + A-line flare
+  skirt:
+    '<path d="M75,150 Q100,143 125,150 L126,164 Q100,170 74,164 Z"/>'
+    +'<path d="M74,164 Q100,170 126,164 L140,253 Q100,261 60,253 Z"/>',
+
+  // Underwear: waistband + classic brief shape
+  briefs:
+    '<path d="M74,150 Q100,143 126,150 L127,164 Q100,169 73,164 Z"/>'
+    +'<path d="M73,164 Q86,169 100,169 L97,186 Q94,198 88,202 L76,202 Q72,202 72,198 L72,174 Z"/>'
+    +'<path d="M100,169 Q114,169 127,164 L128,174 L128,198 Q128,202 124,202 L112,202 Q106,198 103,186 Z"/>',
+
+  /* ===== SHOES ===== */
+  // Sneakers: low profile, rounded toe, flat sole
+  sneakers:
+    '<path d="M74,308 Q68,308 68,316 L68,327 Q68,331 72,331 L100,331 Q106,329 106,323 L106,312 Q102,308 96,308 Z"/>'
+    +'<path d="M100,308 Q96,308 94,312 L94,323 Q94,329 100,331 L128,331 Q132,331 132,327 L132,316 Q132,308 126,308 Z"/>',
+
+  // Boots: tall shaft + rounded toe + slight heel
+  boots:
+    '<path d="M77,279 L77,312 Q72,315 72,320 L72,327 Q72,331 76,331 L100,331 Q106,329 106,322 L106,311 Q100,311 97,309 L97,279 Z"/>'
+    +'<path d="M103,279 L103,309 Q100,311 94,311 L94,322 Q94,329 100,331 L124,331 Q128,331 128,327 L128,320 Q128,315 123,312 L123,279 Z"/>',
+
+  // Sandals: thin strap sole
+  sandals:
+    '<path d="M70,318 L70,328 Q70,332 74,332 L100,332 Q105,332 106,328 L106,318 Z"/>'
+    +'<path d="M94,318 L94,328 Q94,332 98,332 L128,332 Q132,332 132,328 L132,318 Z"/>',
+
+  // Dress shoes: pointed toe profile, slight heel
+  dressshoes:
+    '<path d="M72,309 Q65,313 65,320 L65,327 Q65,331 69,331 L100,331 Q107,329 107,322 L107,313 Q103,308 96,308 Z"/>'
+    +'<path d="M100,308 Q95,308 93,313 L93,322 Q93,329 100,331 L131,331 Q135,331 135,327 L135,320 Q135,313 128,309 Z"/>',
+
+  // Ankle socks: pair with cuffs and foot
+  socks:
+    '<path d="M76,297 L76,320 Q72,322 68,326 Q66,330 70,332 L98,332 Q100,332 100,328 L100,297 Z"/>'
+    +'<path d="M100,297 L100,328 Q100,332 102,332 L130,332 Q134,330 132,326 Q128,322 124,320 L124,297 Z"/>',
+
+  /* ===== HATS ===== */
+  // Beanie: rounded dome + ribbed band
+  beanie:
+    '<path d="M76,40 Q76,17 100,15 Q124,17 124,40 L122,49 L78,49 Z"/>'
+    +'<rect x="76" y="45" width="48" height="12" rx="6"/>',
+
+  // Baseball cap: dome + side brim
+  cap:
+    '<path d="M77,37 Q77,14 100,12 Q123,14 123,37 L121,46 L79,46 Z"/>'
+    +'<path d="M121,46 Q138,46 149,48 L149,54 Q136,58 121,54 Z"/>',
 };
 
 /* Real bounds of each garment, measured once from the shapes themselves —
@@ -2012,12 +2284,14 @@ const PHOTO_BOX = {
 /* Paint a garment: photo-filled when one exists, flat colour otherwise. */
 function garment(item){
   const photo = PHOTOS[item.id];
-
-  /* A real photo REPLACES the drawn graphic outright. No generated shape is
-     used as a mask or an outline — masking the user's own image is what
-     distorted it. The drawn shapes are placeholders until a photo exists. */
   if(photo){
-    const k = PHOTO_BOX[GARMENTS[item.kind].cat];
+    if(item.masked){
+      /* Masked photo: a 400×760 PNG whose transparent regions are outside the
+         clothing shape — lay it over the full doll canvas unchanged. */
+      return '<image href="'+photo+'" x="0" y="0" width="200" height="380"/>';
+    }
+    /* Legacy: photo placed in its category's bounding box. */
+    const k = PHOTO_BOX[GARMENTS[item.kind] ? GARMENTS[item.kind].cat : 'top'] || PHOTO_BOX.top;
     return '<image href="'+photo+'" x="'+k[0]+'" y="'+k[1]+'" width="'+k[2]+'" height="'+k[3]
          + '" preserveAspectRatio="xMidYMid meet"/>';
   }
@@ -2060,12 +2334,19 @@ function doll(outfit, opts){
 
 /* A single garment drawn small, for wardrobe tiles. */
 function itemThumb(item){
-  // photographed items show the photo itself, never a cropped-to-blob version
-  if(PHOTOS[item.id]){
-    return '<img class="thumb" src="'+PHOTOS[item.id]+'" alt="'+esc(item.name)+'">';
-  }
   const b = shapeBBox(item.kind), p = 5;
   const vb = (b.x-p)+' '+(b.y-p)+' '+(b.w+2*p)+' '+(b.h+2*p);
+  if(PHOTOS[item.id] && item.masked){
+    /* Masked photo: full 200×380 canvas — crop viewBox to clothing region so
+       only the shape area shows. Transparent outside = clean cut-out. */
+    return '<svg class="thumb" viewBox="'+vb+'" role="img" aria-label="'+esc(item.name)+'">'
+      +'<image href="'+PHOTOS[item.id]+'" x="0" y="0" width="200" height="380"/>'
+      +'</svg>';
+  }
+  if(PHOTOS[item.id]){
+    /* Legacy unmasked photo — show as-is. */
+    return '<img class="thumb" src="'+PHOTOS[item.id]+'" alt="'+esc(item.name)+'">';
+  }
   return '<svg class="thumb" viewBox="'+vb+'" role="img" aria-label="'+esc(item.name)+'">'
     + garment(item) + '</svg>';
 }
@@ -2366,8 +2647,7 @@ function closetView(){
               + (w.photo ? ' · 📷' : '')+'</span>'
           + '</button>'
           + '<div class="wacts">'
-            + '<label class="btn sm ghost cam">'+(w.photo?'Replace':'📷 Photo')
-              + '<input type="file" accept="image/*" onchange="attachPhoto(\''+w.id+'\',this.files[0]);this.value=\'\'"></label>'
+            + '<button class="btn sm ghost" onclick="openPhotoModal(\''+w.id+'\')">'+(w.photo?'📷 Replace':'📷 Photo')+'</button>'
             + (w.photo ? '<button class="btn sm ghost" onclick="dropPhoto(\''+w.id+'\')">Clear photo</button>' : '')
             + '<button class="btn sm ghost" onclick="toggleStore(\''+w.id+'\')">'+(w.stored?'Unpack':'Pack away')+'</button>'
             + '<button class="btn sm ghost del" onclick="removeItem(\''+w.id+'\')">✕</button>'
