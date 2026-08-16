@@ -566,6 +566,60 @@ svg.doll{width:100%;max-width:230px;height:auto;display:block}
 /* photo-modal canvas — smooth downscale */
 #pmCanvas{image-rendering:auto}
 
+/* ---------- full-screen dialog (photo cropping) ----------
+   Fitting a photo to a garment outline needs room: at modal size the preview
+   was ~140px wide, too small to judge the crop on a tablet. */
+dialog.full{
+  width:100vw;max-width:none;
+  height:100vh;height:100dvh;max-height:none;
+  margin:0;border:0;border-radius:0;
+  background:var(--plane);
+}
+dialog.full::backdrop{background:var(--plane);backdrop-filter:none}
+dialog.full .dlg{
+  padding:0;height:100%;display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+  padding-left:env(safe-area-inset-left);
+  padding-right:env(safe-area-inset-right);
+}
+.pmhead{
+  flex:none;display:flex;align-items:center;gap:10px;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+}
+.pmhead h2{font-size:16px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pmhead .x{
+  appearance:none;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);
+  width:34px;height:34px;border-radius:10px;flex:none;cursor:pointer;font:inherit;font-size:15px;
+}
+.pmhead .x:hover{border-color:var(--border-2)}
+
+/* The canvas gets every pixel left between header and footer. Absolute +
+   inset:0 + margin:auto is the one letterboxing pattern that reliably honours
+   BOTH max dimensions — percentage max-height on a flex/grid child does not. */
+.pmstage{flex:1;min-height:0;position:relative;margin:12px 16px}
+.pmstage canvas{
+  position:absolute;inset:0;margin:auto;display:block;
+  max-width:100%;max-height:100%;width:auto;height:auto;
+  border-radius:14px;background:var(--plane);border:1px solid var(--border);
+}
+.pmfoot{
+  flex:none;display:flex;flex-direction:column;gap:10px;
+  padding:12px 16px 16px;border-top:1px solid var(--border);background:var(--surface);
+}
+.pmfoot .hint{margin:0;text-align:center}
+.pmfoot .field{margin:0}
+.pmacts{display:flex;gap:8px}
+.pmacts .btn{flex:1}
+/* landscape phones: header/footer eat the screen, so tighten them */
+@media (max-height:520px){
+  .pmhead{padding:7px 12px}
+  .pmhead h2{font-size:14px}
+  .pmfoot{padding:8px 12px 10px;gap:7px}
+  .pmfoot .hint{display:none}
+  .pmstage{margin:6px 12px}
+}
+
 /* ---------- mix & match ---------- */
 .closethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .closethead .chips{flex:1;min-width:0}
@@ -778,7 +832,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-16c';
+const BUILD = '2026-08-16d';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -1935,6 +1989,29 @@ async function dropPhoto(itemId){
 let _pmItemId = null, _pmImg = null, _pmScale = 1, _pmDrawSeq = 0;
 const _pmMaskCache = {};   // caches white-fill SVG→Image per garment kind
 
+/* Preview backing resolution. A fixed multiplier doesn't work: the crop box for
+   trousers is ~68 units wide, so ×3 would back a full-screen canvas with 204px
+   and look soft on a retina tablet. Scale so the long edge lands near 1100px
+   instead, and set it per garment when the modal opens. */
+let PMS = 3;
+function _pmSetScale(kind){
+  const b = _pmBox(kind);
+  PMS = Math.min(20, Math.max(2, 1400 / Math.max(b.w, b.h)));
+  return PMS;
+}
+/* The shape mask is cached per garment, so it is rendered once at a fixed high
+   resolution and scaled at draw time rather than tracking PMS. */
+const MASK_S = 4;
+
+/* The preview crops to the garment, not the whole figure. Trousers occupy about
+   a third of the doll's height — showing the full 200×380 canvas would waste
+   most of the screen and leave the thing being cropped small. Anything drawn in
+   full doll space is offset by -x,-y to land correctly in this window. */
+function _pmBox(kind){
+  const b = shapeBBox(kind), p = 6;
+  return { x:b.x-p, y:b.y-p, w:b.w+2*p, h:b.h+2*p };
+}
+
 function openPhotoModal(itemId){
   const it = itemById(itemId);
   if(!it) return;
@@ -1942,29 +2019,37 @@ function openPhotoModal(itemId){
   _pmImg = null;
   _pmScale = 1;
 
-  dlg.innerHTML = '<div class="dlg">'
-    +'<h2>📷 '+esc(GARMENTS[it.kind] ? GARMENTS[it.kind].name : it.kind)+' photo</h2>'
-    +'<p class="hint">Your photo will be cropped and fitted to the clothing shape automatically. '
-      +'Works best on a solid or plain background.</p>'
-    +'<canvas id="pmCanvas" width="200" height="380"'
-      +' style="display:block;width:140px;height:266px;margin:12px auto;border-radius:10px;'
-      +'background:var(--plane);border:1px solid var(--border)"></canvas>'
-    +'<div class="pm-src">'
-      +'<label class="btn primary">🖼️ Choose photo'
-        +'<input type="file" accept="image/*"'
-          +' onchange="pmPick(this)"></label>'
-      +'<label class="btn pm-cam">📷 Take photo'
-        +'<input type="file" accept="image/*" capture="environment"'
-          +' onchange="pmPick(this)"></label>'
+  const label = esc(GARMENTS[it.kind] ? GARMENTS[it.kind].name : it.kind);
+  const box = _pmBox(it.kind);
+  _pmSetScale(it.kind);
+    dlg.innerHTML = '<div class="dlg">'
+    +'<div class="pmhead">'
+      +'<h2>📷 '+label+' photo</h2>'
+      +'<button class="x" onclick="closeDlg()" aria-label="Close">✕</button>'
     +'</div>'
-    +'<div id="pmCtrls"></div>'
-    +'<footer class="dlg">'
-      +'<button class="btn" onclick="closeDlg()">Cancel</button>'
-      +'<button class="btn primary" id="pmSaveBtn" style="display:none" onclick="pmSave()">Save photo</button>'
-    +'</footer>'
+    +'<div class="pmstage">'
+      +'<canvas id="pmCanvas" width="'+Math.round(box.w*PMS)+'"'
+        +' height="'+Math.round(box.h*PMS)+'"></canvas>'
+    +'</div>'
+    +'<div class="pmfoot">'
+      +'<p class="hint">Cropped to the '+label.toLowerCase()+' shape. '
+        +'Works best on a plain background.</p>'
+      +'<div id="pmCtrls"></div>'
+      +'<div class="pm-src">'
+        +'<label class="btn primary">🖼️ Choose photo'
+          +'<input type="file" accept="image/*" onchange="pmPick(this)"></label>'
+        +'<label class="btn pm-cam">📷 Take photo'
+          +'<input type="file" accept="image/*" capture="environment"'
+            +' onchange="pmPick(this)"></label>'
+      +'</div>'
+      +'<div class="pmacts">'
+        +'<button class="btn" onclick="closeDlg()">Cancel</button>'
+        +'<button class="btn primary" id="pmSaveBtn" style="display:none" onclick="pmSave()">Save photo</button>'
+      +'</div>'
+    +'</div>'
   +'</div>';
 
-  dlg.showModal();
+  showDlg(true);
   _pmDrawPlaceholder();
 }
 
@@ -1973,23 +2058,25 @@ function _pmDrawPlaceholder(){
   if(!it) return;
   const canvas = document.getElementById('pmCanvas');
   if(!canvas) return;
+  const box = _pmBox(it.kind);
+  const W = canvas.width, H = canvas.height;
   const shape = SHAPES[it.kind];
-  if(!shape){ canvas.getContext('2d').clearRect(0,0,200,380); return; }
+  if(!shape){ canvas.getContext('2d').clearRect(0,0,W,H); return; }
 
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
+  /* viewBox is the crop window, so the shape fills the canvas. */
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'"'
+    +' viewBox="'+box.x+' '+box.y+' '+box.w+' '+box.h+'">'
     +'<g fill="'+it.hex+'22" stroke="'+it.hex+'" stroke-width="1.5" stroke-dasharray="6 4">'+shape+'</g>'
     +'</svg>';
   const img = new Image();
   img.onload = () => {
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 200, 380);
-    ctx.drawImage(img, 0, 0);
-    const b = shapeBBox(it.kind);
-    const ty = Math.min(b.y + b.h + 22, 362);
-    ctx.fillStyle = 'rgba(255,255,255,.38)';
-    ctx.font = 'bold 11px system-ui,sans-serif';
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(img, 0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,.42)';
+    ctx.font = 'bold ' + (10*PMS) + 'px system-ui,sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Upload a photo to fill this shape', 100, ty);
+    ctx.fillText('Add a photo to fill this shape', W/2, H - 10*PMS);
   };
   img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
@@ -2038,8 +2125,8 @@ function _pmGetMask(kind){
     img.onload = () => { _pmMaskCache[kind] = img; res(img); };
     img.onerror = rej;
     img.src = 'data:image/svg+xml,' + encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
-      +'<g fill="white">'+shape+'</g></svg>');
+      '<svg xmlns="http://www.w3.org/2000/svg" width="'+(200*MASK_S)+'" height="'+(380*MASK_S)+'"'
+      +' viewBox="0 0 200 380"><g fill="white">'+shape+'</g></svg>');
   });
 }
 
@@ -2061,25 +2148,32 @@ async function pmDraw(){
 
     /* Composite photo + mask on a temp canvas to avoid clearing the visible
        canvas mid-draw (prevents flicker when the slider fires rapidly). */
+    /* Canvas is the crop window; full-doll-space art is drawn offset by -x,-y. */
+    const box = _pmBox(it.kind);
+    const W = canvas.width, H = canvas.height;
+    const ox = -box.x*PMS, oy = -box.y*PMS;
+    const fullW = 200*PMS, fullH = 380*PMS;
+
     const tmp = document.createElement('canvas');
-    tmp.width = 200; tmp.height = 380;
+    tmp.width = W; tmp.height = H;
     const tc = tmp.getContext('2d');
-    tc.drawImage(_pmImg, px, py, pw, ph);
+    tc.drawImage(_pmImg, ox + px*PMS, oy + py*PMS, pw*PMS, ph*PMS);
     tc.globalCompositeOperation = 'destination-in';
-    tc.drawImage(mask, 0, 0);
+    tc.drawImage(mask, ox, oy, fullW, fullH);
 
     if(seq !== _pmDrawSeq) return;
-    ctx.clearRect(0, 0, 200, 380);
+    ctx.clearRect(0, 0, W, H);
     ctx.drawImage(tmp, 0, 0);
 
     /* Overlay a subtle shape outline so the boundary is always visible. */
     const ol = new Image();
     ol.src = 'data:image/svg+xml,' + encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="380" viewBox="0 0 200 380">'
+      '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'"'
+      +' viewBox="'+box.x+' '+box.y+' '+box.w+' '+box.h+'">'
       +'<g fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.5">'+SHAPES[it.kind]+'</g></svg>');
     await new Promise(r => { ol.onload = r; ol.onerror = r; });
     if(seq !== _pmDrawSeq) return;
-    ctx.drawImage(ol, 0, 0);
+    ctx.drawImage(ol, 0, 0, W, H);
   }catch(e){ console.warn('pmDraw', e); }
 }
 
@@ -2831,7 +2925,7 @@ function openItem(){
   wire('[data-h]','h',v=>itemHex=v);
   wire('[data-s]','s',v=>itemSeason=v);
 
-  dlg.showModal();
+  showDlg();
   const n = document.getElementById('iname');
   n.focus();
   n.onkeydown = e => { if(e.key==='Enter') submitItem(); };
@@ -2950,6 +3044,16 @@ const dlg = document.getElementById('dlg');
 function closeDlg(){ dlg.close(); }
 dlg.addEventListener('click', e=>{ if(e.target === dlg) dlg.close(); });
 
+/* One <dialog> is shared by every modal, and only the photo cropper wants to be
+   full-screen. Set the mode when OPENING rather than clearing it on close: the
+   `close` event is not reliably delivered everywhere (it does not fire at all in
+   at least one engine this was tested in), which left Settings opening
+   full-bleed after the cropper had been used. */
+function showDlg(full){
+  dlg.classList.toggle('full', !!full);
+  dlg.showModal();
+}
+
 let newSubject = null;
 
 function openLoad(){
@@ -2986,7 +3090,7 @@ function openLoad(){
   });
   if(newSubject) dlg.querySelector('[data-subj="'+newSubject+'"]')?.setAttribute('aria-pressed','true');
 
-  dlg.showModal();
+  showDlg();
   const nl = document.getElementById('nl');
   nl.onkeydown = e => { if(e.key==='Enter') submitLoad(); };
 }
@@ -3034,7 +3138,7 @@ function openSettings(){
       + 'shows an older build, it is running a stale copy of index.html.</p></div>'
     + '<footer><button class="btn primary" onclick="saveSettings()">Done</button></footer>'
     + '</div>';
-  dlg.showModal();
+  showDlg();
 }
 function saveSettings(){
   dlg.querySelectorAll('[data-pname]').forEach(inp=>{
