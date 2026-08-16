@@ -776,6 +776,9 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
    STATE
    ========================================================================= */
 const KEY = 'yoder-laundry-v1';
+/* Bumped whenever this file changes. Shown in Settings so a phone running an
+   old copy from iCloud / the home screen is obvious at a glance. */
+const BUILD = '2026-08-16b';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -2980,7 +2983,9 @@ function openSettings(){
       + '<div class="prow"><button class="btn sm" onclick="exportData()">Export JSON</button>'
       + '<button class="btn sm" onclick="wipe()" style="color:#ffb3b3">Reset everything</button></div>'
       + '<p class="hint" style="margin-top:8px">Everything lives in this browser only — nothing is uploaded. '
-      + 'Each device keeps its own board.</p></div>'
+      + 'Each device keeps its own board.</p>'
+      + '<p class="hint" style="margin-top:6px;opacity:.75">Build '+BUILD+' — if a phone '
+      + 'shows an older build, it is running a stale copy of index.html.</p></div>'
     + '<footer><button class="btn primary" onclick="saveSettings()">Done</button></footer>'
     + '</div>';
   dlg.showModal();
