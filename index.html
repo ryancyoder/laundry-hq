@@ -778,7 +778,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-16b';
+const BUILD = '2026-08-16c';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -2131,17 +2131,63 @@ async function pmSave(){
    Shapes are plain elements with no fill; each is painted flat OR used as a
    clip so a real photo of the garment fills its silhouette.
    ========================================================================= */
+/* The figure under the clothes. Drawn as four continuous paths rather than a
+   stack of capsules, so no seam lines cross the silhouette: head+neck, one arm
+   mirrored, then torso→legs→feet as a single outline. Painting order matters —
+   the arms go down before the torso so their shoulder ends disappear under it
+   and the deltoids emerge from the shoulder slope instead of sitting on it.
+
+   Every edge is measured against the garment paths below, because the body is
+   painted first and anything wider than its clothing shows as a rim:
+     · crown y≥17 and half-width ≤21.5 — the beanie dome starts at y=15, the
+       cap at y=12, both spanning x 77–123
+     · torso ≤ x 72–128 — the dress bodice is the narrowest top at x 70–130
+     · waist ≤ x 78–122 at y150 — bottoms pitch their waistband at x 72–128
+     · arms hug tighter than the sleeves and stay inside x 46–72, the corridor
+       every sleeve path sweeps through
+     · soles stop at y=331 and x 75–96 / 104–125 — inside the narrowest shoe
+   Legs part at y=188 into a notch wider than the trouser gap, so what shows
+   between two trouser legs is background shadow rather than a strip of skin. */
+const ARM =
+  'M79,86 C70.5,88.5 64,93.5 61,102.5 C58.5,116 55.5,135 53,151'
+  +' C52,158 51.5,162 51,166'
+  +' C48.5,170 48,177 49,183 Q49.5,189 53.5,190'      /* palm, flat fingertip */
+  +' Q57.5,190.5 59.5,186.5 C61,182.5 61.5,178 61.5,173'
+  +' C61.5,170 61.5,168 61.5,166 C63.5,150 66,130 68.5,112'
+  +' C70,103 72,93.5 80,89 Z';
+
 const BODY = [
-  '<ellipse cx="100" cy="44" rx="23" ry="26"/>',
-  '<rect x="93" y="63" width="14" height="17" rx="6"/>',
-  '<rect x="70" y="76" width="60" height="96" rx="22"/>',
-  '<rect x="52" y="82" width="17" height="90" rx="8.5"/>',
-  '<rect x="131" y="82" width="17" height="90" rx="8.5"/>',
-  '<rect x="73" y="155" width="54" height="40" rx="18"/>',
-  '<rect x="78" y="182" width="21" height="136" rx="10.5"/>',
-  '<rect x="101" y="182" width="21" height="136" rx="10.5"/>',
-  '<ellipse cx="88" cy="322" rx="14" ry="9"/>',
-  '<ellipse cx="112" cy="322" rx="14" ry="9"/>',
+  /* head + neck: jaw tapers to a chin, neck flares into the trapezius at y=88
+     where every top's shoulder line covers it */
+  '<path d="M100,17 C112.5,17 121.5,27.5 121.5,42'
+    +' C121.5,53.5 116.5,63 107.5,67.5 L107.5,74'
+    +' C107.5,80 111,85 117,88 L83,88'
+    +' C89,85 92.5,80 92.5,74 L92.5,67.5'
+    +' C83.5,63 78.5,53.5 78.5,42 C78.5,27.5 87.5,17 100,17 Z"/>',
+
+  /* arms, angled out along the sleeve line and ending in a hand that clears
+     even a long cuff (hems land at y≈175) */
+  '<path d="'+ARM+'"/>',
+  '<g transform="translate(200,0) scale(-1,1)"><path d="'+ARM+'"/></g>',
+
+  /* torso → legs → feet, one outline: sloped shoulders, nipped waist, hips
+     wider than the waist, thighs tapering through the knee to the ankle */
+  '<path d="M100,79 C88.5,79 79.5,82 75,88 C72.5,92 72,98 72,105'
+    +' C72.2,120 76,138 78.5,150 C76.5,158 74.5,168 74.5,180'
+    +' C74.5,192 77,200 78,212 C79,232 79.5,244 79.5,254'
+    +' C79.5,268 78,286 79,300 C79.5,308 80.5,312 81,316'
+    +' C77,320 75,325 75,328 Q75,331 79,331 L94,331'
+    +' Q98,330.5 97,326 C96,321.5 91,318 90,316'
+    +' C89.5,305 89,290 90.5,278 C92,266 92.5,258 92.5,250'
+    +' C93.5,232 95,215 96.5,196 C97.5,190 99,187 100,187'
+    +' C101,187 102.5,190 103.5,196 C105,215 106.5,232 107.5,250'
+    +' C107.5,258 108,266 109.5,278 C111,290 110.5,305 110,316'
+    +' C109,318 104,321.5 103,326 Q102,330.5 106,331 L121,331'
+    +' Q125,331 125,328 C125,325 123,320 119,316'
+    +' C119.5,312 120.5,308 121,300 C122,286 120.5,268 120.5,254'
+    +' C120.5,244 121,232 122,212 C123,200 125.5,192 125.5,180'
+    +' C125.5,168 123.5,158 121.5,150 C124,138 127.8,120 128,105'
+    +' C128,98 127.5,92 125,88 C120.5,82 111.5,79 100,79 Z"/>',
 ].join('');
 
 const SHAPES = {
