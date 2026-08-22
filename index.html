@@ -546,6 +546,8 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
   padding:26px;box-shadow:var(--shadow);
 }
 .setup h2{font-size:22px;font-weight:800;letter-spacing:-.6px}
+.orbar{display:flex;align-items:center;gap:10px;margin:20px 0 4px;color:var(--muted);font-size:11.5px}
+.orbar::before,.orbar::after{content:"";flex:1;height:1px;background:var(--border)}
 .setup p.lead{font-size:13.5px;color:var(--ink-2);margin-top:7px;line-height:1.55}
 
 /* ---------- toast ---------- */
@@ -636,7 +638,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22c';
+const BUILD = '2026-08-22d';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -1617,12 +1619,18 @@ function setupView(){
     + '<input type="text" id="sp'+i+'" placeholder="Name — '+f.hint+'" autocomplete="off"></div>'
   ).join('');
   return '<div class="setup">'
-    + '<h2>Who’s in the house? 🧺</h2>'
-    + '<p class="lead">Seven colour slots — type a name beside each one you need. '
-    + 'Blank rows are skipped, and you can add or rename people any time from ⚙ Settings. '
-    + 'Names stay on this device.</p>'
-    + '<div class="rows" style="margin-top:18px">'+rows+'</div>'
-    + '<button class="btn primary wide" style="margin-top:18px" onclick="finishSetup()">Start tracking →</button>'
+    + '<h2>Welcome to Laundry HQ 🧺</h2>'
+    + '<p class="lead">If your family already uses Laundry HQ, sign in and this '
+    + 'device joins their board — the same loads, machines and schedule, live.</p>'
+    + '<button class="btn primary wide" style="margin-top:16px"'
+      + (sb ? '' : ' disabled') + ' onclick="signIn()">'
+      + (sb ? 'Sign in with Google' : 'Connecting…') + '</button>'
+    + '<div class="orbar"><span>or set this device up on its own</span></div>'
+    + '<p class="lead" style="font-size:12.5px">Seven colour slots — type a name beside '
+    + 'each one you need. Blank rows are skipped. These names stay on this device only '
+    + 'and are not shared with the family board.</p>'
+    + '<div class="rows" style="margin-top:14px">'+rows+'</div>'
+    + '<button class="btn wide" style="margin-top:14px" onclick="finishSetup()">Use this device only →</button>'
     + '</div>';
 }
 function finishSetup(){
@@ -1643,12 +1651,15 @@ function finishSetup(){
 function render(){
   const app = document.getElementById('app');
   document.getElementById('fabbar').style.display = S.setup ? '' : 'none';
-  // querySelectorAll: there are two icon buttons in the header now
-  ['.tabs','.deskadd','.top .btn.icon'].forEach(sel=>{
+  // Everything except the account button hides during first-run setup — a new
+  // device has to be able to sign in without first inventing a local roster.
+  ['.tabs','.deskadd','.top .btn.icon:not(#acctBtn)'].forEach(sel=>{
     document.querySelectorAll(sel).forEach(el=>{
       el.style.visibility = S.setup ? '' : 'hidden';
     });
   });
+  // the account button is the one control a brand-new device must always reach
+  document.querySelectorAll('#acctBtn').forEach(el=>{ el.style.visibility = ''; });
 
   if(!S.setup){
     app.innerHTML = setupView();
