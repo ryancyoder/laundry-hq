@@ -655,7 +655,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22g';
+const BUILD = '2026-08-22h';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -1998,6 +1998,7 @@ function openAccount(){
                 : 'Signed in, but no household is linked to this account yet.')
           + '</p></div>'
           + '<footer><button class="btn" onclick="signOut()">Sign out</button>'
+          + '<button class="btn" onclick="openJoin()">Join with a code</button>'
           + '<button class="btn primary" onclick="closeDlg()">Done</button></footer>'
         : '<p class="hint">' + (connecting
             ? 'Still connecting to the server — give it a second and reopen this.'
@@ -2138,12 +2139,20 @@ async function pushMachine(m){
 /* Resolve which household this user belongs to, then load and subscribe. */
 async function syncStart(){
   if(!sb || !sbUser) return;
-  const { data, error } = await sb.from('household_members').select('household_id').limit(1);
-  if(error || !data || !data.length){
-    openJoin();                       // signed in but not family yet
-    return;
-  }
-  HH = data[0].household_id;
+  /* A user can belong to more than one household: a trigger in the shared
+     project creates an empty "Our kitchen" for every new sign-up, so a family
+     member who has just signed in is typically in that one AND (once they use
+     the code) the real one. Never just take the first — pick the household
+     that actually has a laundry roster, and otherwise ask for the code. */
+  const { data: mems, error } = await sb.from('household_members').select('household_id');
+  if(error){ toast('Could not check your household: '+error.message,'bad'); return; }
+  const ids = (mems||[]).map(m=>m.household_id);
+  if(!ids.length){ openJoin(); return; }
+
+  const { data: lp } = await sb.from('laundry_people').select('household_id').in('household_id', ids);
+  const real = [...new Set((lp||[]).map(r=>r.household_id))];
+  if(!real.length){ openJoin(); return; }   // only the empty auto-created one
+  HH = real[0];
   await pullAll();
   loadJoinCode();
   ['laundry_loads','laundry_machines','laundry_chores','laundry_people'].forEach(t=>{
