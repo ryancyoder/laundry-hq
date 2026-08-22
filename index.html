@@ -838,7 +838,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22a';
+const BUILD = '2026-08-22b';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -933,6 +933,9 @@ function load(){
   }catch(e){ console.warn('state reset', e); return blank(); }
 }
 function save(){
+  // While synced the database is authoritative; don't overwrite this device's
+  // own local board with the shared one, so signing out returns it intact.
+  if(typeof isSynced === 'function' && isSynced()) return;
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('Could not save — browser storage is full or blocked.','bad'); }
 }
@@ -1104,13 +1107,15 @@ function step(){
    ========================================================================= */
 function addLoad({subjectId, note}){
   const s = subjectOf(subjectId);
+  const _tmpId = isSynced() ? 'tmp'+Math.random().toString(36).slice(2,9) : uid('l');
   S.loads.push({
-    id: uid('l'), subjectId, note: (note||'').trim(),
+    id: _tmpId, subjectId, note: (note||'').trim(),
     stage:'queue', createdAt:now(), stageAt:now(),
     machineId:null, timer:null, fired:false, archived:false, finishedAt:null,
     washMs:0, dryMs:0,
   });
   commit();
+  if(isSynced()) pushLoad(S.loads[S.loads.length-1]);
   toast('Added '+s.name+' to the pile');
 }
 
@@ -1147,6 +1152,7 @@ function moveTo(id, stage, machineId){
 
   l.stage = stage; l.stageAt = now();
   commit();
+  if(isSynced()) pushLoad(l);
 }
 
 function bump(id, mins){
@@ -1155,6 +1161,7 @@ function bump(id, mins){
   l.timer.endsAt += mins*60000;
   if(l.timer.endsAt > now()) l.fired = false;
   commit();
+  if(isSynced()) pushLoad(l);
 }
 function removeLoad(id){
   const l = S.loads.find(x=>x.id===id);
@@ -1162,12 +1169,15 @@ function removeLoad(id){
   if(!confirm('Delete the '+subjectOf(l.subjectId).name+' load? This can’t be undone.')) return;
   S.loads = S.loads.filter(x=>x.id!==id);
   commit();
+  if(isSynced()) deleteLoad(id);
 }
 function clearDone(){
   const n = inStage('done').length;
   if(!n) return;
-  S.loads.forEach(l=>{ if(l.stage==='done' && !l.archived) l.archived = true; });
+  const _cleared = S.loads.filter(l=>l.stage==='done' && !l.archived);
+  _cleared.forEach(l=>{ l.archived = true; });
   commit();
+  if(isSynced()) _cleared.forEach(pushLoad);
   toast('Cleared '+n+' load'+(n===1?'':'s')+' — still counted in Stats.','good');
 }
 
@@ -1603,12 +1613,14 @@ function toggleDay(sid, dow){
   if(i<0) s.days.push(dow); else s.days.splice(i,1);
   s.days.sort((a,b)=>a-b);
   commit();
+  if(isSynced()) (String(sid)[0]==='p' ? pushPerson : pushChore)(s);
 }
 function setEvery(sid, val){
   const c = S.chores.find(x=>x.id===sid);
   const n = parseInt(val,10);
   if(c && n>=1 && n<=180) c.everyDays = n;
   commit();
+  if(isSynced() && c) pushChore(c);
 }
 
 /* Start of the most recent occurrence of `dow`, at or before today. */
@@ -3154,6 +3166,7 @@ function saveSettings(){
     if(p && v) p.name = v;
   });
   assignInitials();
+  if(isSynced()) S.people.forEach(pushPerson);
   dlg.querySelectorAll('[data-mname]').forEach(inp=>{
     const m = machineOf(inp.dataset.mname);
     if(m && inp.value.trim()) m.name = inp.value.trim();
@@ -3164,6 +3177,7 @@ function saveSettings(){
     if(m && v>0 && v<=600) m.mins = v;
   });
   dlg.close(); commit();
+  if(isSynced()) S.machines.forEach(pushMachine);
 }
 function addPerson(){
   const inp = document.getElementById('newp');
@@ -3290,10 +3304,12 @@ function openAccount(){
     + '<h2>Account</h2>'
     + (sbUser
         ? '<p class="hint">Signed in as <b>' + esc(sbUser.email) + '</b>.</p>'
-          + '<div class="field"><label>What this does today</label>'
-          + '<p class="hint" style="margin:0">Nothing yet — your loads and wardrobe are still '
-          + 'stored on this device only. Signing in is the first half of shared sync; '
-          + 'the second half is being built.</p></div>'
+          + '<div class="field"><label>Sync</label>'
+          + '<p class="hint" style="margin:0">'
+          + (HH ? 'The <b>Board</b> and <b>Week</b> are shared live across every signed-in '
+                + 'device. The <b>Closet</b> is still stored on this device only.'
+                : 'Signed in, but no household is linked to this account yet.')
+          + '</p></div>'
           + '<footer><button class="btn" onclick="signOut()">Sign out</button>'
           + '<button class="btn primary" onclick="closeDlg()">Done</button></footer>'
         : '<p class="hint">' + (connecting
@@ -3301,8 +3317,9 @@ function openAccount(){
             : 'Sign in with Google to get ready for shared sync across the family’s devices.')
           + '</p>'
           + '<div class="field"><label>Heads up</label>'
-          + '<p class="hint" style="margin:0">Signing in doesn’t change your board yet. '
-          + 'Everything stays on this device until sync is finished.</p></div>'
+          + '<p class="hint" style="margin:0">Signing in switches the Board and Week to the '
+          + 'shared family data. This device’s own local board is kept and comes back if '
+          + 'you sign out. The Closet stays on this device either way.</p></div>'
           + '<footer><button class="btn" onclick="closeDlg()">Cancel</button>'
           + '<button class="btn primary"' + (connecting ? ' disabled' : '')
           + ' onclick="signIn()">Sign in with Google</button></footer>')
@@ -3312,6 +3329,149 @@ function openAccount(){
 
 /* supabase-js is an ES module from a CDN; if it fails to load (offline, or
    the CDN is blocked) the app carries on exactly as before. */
+/* =========================================================================
+   SYNC — server-authoritative when signed in
+   ------------------------------------------------------------------------
+   The database is the source of truth while signed in; localStorage is left
+   untouched and is what an anonymous device falls back to.
+
+   Reads are a full pull. At household scale (tens of rows) that is far
+   simpler and less error-prone than diffing, and the round trip is
+   negligible. Writes go per-row so two phones editing at once don't clobber
+   each other — which is the entire point of syncing.
+
+   Ids are prefixed to keep the app's existing string-id model intact and to
+   keep person/chore ids distinct in `subjectId`: p12, c3, m1, l88.
+   ========================================================================= */
+let HH = null;                 // household id
+let syncing = false, pullTimer = null;
+
+const dbId  = sid => parseInt(String(sid).slice(1), 10);
+const isSynced = () => !!(sb && sbUser && HH);
+
+function tsOf(v){ return v ? new Date(v).getTime() : null; }
+
+async function pullAll(){
+  if(!isSynced()) return;
+  try{
+    const [ppl, mach, chor, lds] = await Promise.all([
+      sb.from('laundry_people').select('*').eq('household_id',HH).order('sort'),
+      sb.from('laundry_machines').select('*').eq('household_id',HH).order('sort'),
+      sb.from('laundry_chores').select('*').eq('household_id',HH).order('sort'),
+      sb.from('laundry_loads').select('*').eq('household_id',HH).order('created_at'),
+    ]);
+    const err = [ppl,mach,chor,lds].find(r=>r.error);
+    if(err){ toast('Sync read failed: '+err.error.message,'bad'); return; }
+
+    S.people = (ppl.data||[]).map(r=>({
+      id:'p'+r.id, name:r.name, hex:r.hex, initials:'', days:r.days||[],
+    }));
+    assignInitials();
+    S.machines = (mach.data||[]).map(r=>({
+      id:'m'+r.id, name:r.name, kind:r.kind, mins:r.mins,
+    }));
+    S.chores = (chor.data||[]).map(r=>({
+      id:'c'+r.id, name:r.name, emoji:r.emoji, hex:r.hex,
+      everyDays:r.every_days, days:r.days||[],
+    }));
+    S.loads = (lds.data||[]).map(r=>({
+      id:'l'+r.id,
+      subjectId: r.person_id ? 'p'+r.person_id : 'c'+r.chore_id,
+      note:r.note||'', stage:r.stage,
+      machineId: r.machine_id ? 'm'+r.machine_id : null,
+      timer: r.timer_ends_at ? {
+        startedAt: tsOf(r.timer_started_at), endsAt: tsOf(r.timer_ends_at), mins: r.timer_mins,
+      } : null,
+      fired:!!r.fired, archived:!!r.archived,
+      createdAt: tsOf(r.created_at), stageAt: tsOf(r.stage_at),
+      finishedAt: tsOf(r.finished_at),
+    }));
+    S.setup = true;
+    render();
+  }catch(e){ toast('Sync error: '+e.message,'bad'); }
+}
+function pullSoon(){ clearTimeout(pullTimer); pullTimer = setTimeout(pullAll, 220); }
+
+/* Translate one in-memory load into its database row. */
+function loadRow(l){
+  const sid = l.subjectId || '';
+  return {
+    household_id: HH,
+    person_id: sid[0]==='p' ? dbId(sid) : null,
+    chore_id:  sid[0]==='c' ? dbId(sid) : null,
+    note: l.note || '',
+    stage: l.stage,
+    machine_id: l.machineId ? dbId(l.machineId) : null,
+    timer_started_at: l.timer ? new Date(l.timer.startedAt).toISOString() : null,
+    timer_ends_at:    l.timer ? new Date(l.timer.endsAt).toISOString()    : null,
+    timer_mins:       l.timer ? l.timer.mins : null,
+    fired: !!l.fired,
+    archived: !!l.archived,
+    stage_at: new Date(l.stageAt || Date.now()).toISOString(),
+    finished_at: l.finishedAt ? new Date(l.finishedAt).toISOString() : null,
+  };
+}
+
+async function pushLoad(l){
+  if(!isSynced() || !l) return;
+  const row = loadRow(l);
+  if(String(l.id).startsWith('tmp')){
+    const { data, error } = await sb.from('laundry_loads').insert(row).select('id').single();
+    if(error) return toast('Could not save load: '+error.message,'bad');
+    l.id = 'l'+data.id;                 // swap the optimistic id for the real one
+  }else{
+    const { error } = await sb.from('laundry_loads').update(row).eq('id', dbId(l.id));
+    if(error) return toast('Could not update load: '+error.message,'bad');
+  }
+}
+async function deleteLoad(id){
+  if(!isSynced()) return;
+  const { error } = await sb.from('laundry_loads').delete().eq('id', dbId(id));
+  if(error) toast('Could not delete: '+error.message,'bad');
+}
+async function pushPerson(p){
+  if(!isSynced()) return;
+  const { error } = await sb.from('laundry_people')
+    .update({ name:p.name, hex:p.hex, days:p.days||[] }).eq('id', dbId(p.id));
+  if(error) toast('Could not save person: '+error.message,'bad');
+}
+async function pushChore(c){
+  if(!isSynced()) return;
+  const { error } = await sb.from('laundry_chores')
+    .update({ name:c.name, every_days:c.everyDays, days:c.days||[] }).eq('id', dbId(c.id));
+  if(error) toast('Could not save: '+error.message,'bad');
+}
+async function pushMachine(m){
+  if(!isSynced()) return;
+  const { error } = await sb.from('laundry_machines')
+    .update({ name:m.name, mins:m.mins }).eq('id', dbId(m.id));
+  if(error) toast('Could not save machine: '+error.message,'bad');
+}
+
+/* Resolve which household this user belongs to, then load and subscribe. */
+async function syncStart(){
+  if(!sb || !sbUser) return;
+  const { data, error } = await sb.from('household_members').select('household_id').limit(1);
+  if(error || !data || !data.length){
+    toast('Signed in, but this account isn’t in a household yet.','bad');
+    return;
+  }
+  HH = data[0].household_id;
+  await pullAll();
+  ['laundry_loads','laundry_machines','laundry_chores','laundry_people'].forEach(t=>{
+    sb.channel('lh_'+t)
+      .on('postgres_changes', { event:'*', schema:'public', table:t }, pullSoon)
+      .subscribe();
+  });
+  toast('Synced — this board is now shared.','good');
+}
+function syncStop(){
+  HH = null;
+  if(sb) sb.removeAllChannels();
+  S = load();                      // fall back to whatever is on this device
+  render();
+}
+
 addEventListener('sb-ready', async ()=>{
   sb = window.__sb;
   try{
@@ -3319,11 +3479,16 @@ addEventListener('sb-ready', async ()=>{
     sbUser = data.session ? data.session.user : null;
   }catch(e){}
   acctPaint();
+  if(sbUser) syncStart();
   sb.auth.onAuthStateChange((_e, session)=>{
     const was = sbUser && sbUser.id;
     sbUser = session ? session.user : null;
     acctPaint();
-    if(sbUser && sbUser.id !== was) toast('Signed in as ' + sbUser.email, 'good');
+    if(sbUser && sbUser.id !== was){
+      toast('Signed in as ' + sbUser.email, 'good');
+      syncStart();
+    }
+    if(!sbUser && was) syncStop();
   });
 });
 addEventListener('sb-failed', ()=>{
