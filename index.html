@@ -768,6 +768,11 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 .deskadd{display:none}
 @media (min-width:760px){.deskadd{display:inline-flex}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* signed-in account chip */
+.btn.icon.signedin{
+  background:linear-gradient(135deg,var(--s3),#12805c);
+  border-color:transparent;color:#fff;font-weight:800;
+}
 
 /* phones: brand takes the first row, controls share the second */
 @media (max-width:620px){
@@ -813,6 +818,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
       <button role="tab" id="tab-stats" aria-selected="false" onclick="setView('stats')">Stats</button>
     </div>
     <button class="btn primary deskadd" onclick="openLoad()">＋ New load</button>
+    <button class="btn icon" id="acctBtn" onclick="openAccount()" title="Account" aria-label="Account">👤</button>
     <button class="btn icon" onclick="openSettings()" title="Settings" aria-label="Settings">⚙</button>
   </header>
 
@@ -832,7 +838,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-16d';
+const BUILD = '2026-08-22a';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -2971,12 +2977,13 @@ function finishSetup(){
 
 function render(){
   const app = document.getElementById('app');
-  document.getElementById('fabbar').style.display = S.setup ? '' : 'none';
   document.getElementById('fabbar').style.display =
     (S.setup && view!=='closet') ? '' : 'none';
+  // querySelectorAll: there are two icon buttons in the header now
   ['.tabs','.deskadd','.top .btn.icon'].forEach(sel=>{
-    const el = document.querySelector(sel);
-    if(el) el.style.visibility = S.setup ? '' : 'hidden';
+    document.querySelectorAll(sel).forEach(el=>{
+      el.style.visibility = S.setup ? '' : 'hidden';
+    });
   });
 
   if(!S.setup){
@@ -3237,7 +3244,95 @@ addEventListener('keydown', e=>{
   if(e.key==='n' && !e.metaKey && !e.ctrlKey && S.setup){ e.preventDefault(); openLoad(); }
 });
 
+/* =========================================================================
+   ACCOUNT — Supabase auth
+   Sign-in only, deliberately. Data still lives in localStorage; syncing is
+   the next step and is kept separate so this can be shipped and tested on
+   its own. Signing in changes nothing about your board yet.
+   ========================================================================= */
+const SB_URL = 'https://ivjxtlznikqxyscyyxzk.supabase.co';
+const SB_KEY = 'sb_publishable_AyiE1P_yJ8aaBtDCqgMS0Q_22dROzpT';
+
+let sb = null, sbUser = null;
+
+function acctPaint(){
+  const b = document.getElementById('acctBtn');
+  if(!b) return;
+  if(sbUser){
+    b.textContent = (sbUser.email || '?').trim()[0].toUpperCase();
+    b.classList.add('signedin');
+    b.title = 'Signed in as ' + sbUser.email;
+  }else{
+    b.textContent = '👤';
+    b.classList.remove('signedin');
+    b.title = sb ? 'Sign in' : 'Connecting…';
+  }
+}
+
+async function signIn(){
+  if(!sb){ toast('Still connecting — try again in a second.','bad'); return; }
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.origin + location.pathname }
+  });
+  if(error) toast('Sign-in failed: ' + error.message, 'bad');
+}
+async function signOut(){
+  if(!sb) return;
+  await sb.auth.signOut();
+  sbUser = null; acctPaint(); dlg.close();
+  toast('Signed out.');
+}
+
+function openAccount(){
+  const connecting = !sb;
+  dlg.innerHTML = '<div class="dlg">'
+    + '<h2>Account</h2>'
+    + (sbUser
+        ? '<p class="hint">Signed in as <b>' + esc(sbUser.email) + '</b>.</p>'
+          + '<div class="field"><label>What this does today</label>'
+          + '<p class="hint" style="margin:0">Nothing yet — your loads and wardrobe are still '
+          + 'stored on this device only. Signing in is the first half of shared sync; '
+          + 'the second half is being built.</p></div>'
+          + '<footer><button class="btn" onclick="signOut()">Sign out</button>'
+          + '<button class="btn primary" onclick="closeDlg()">Done</button></footer>'
+        : '<p class="hint">' + (connecting
+            ? 'Still connecting to the server — give it a second and reopen this.'
+            : 'Sign in with Google to get ready for shared sync across the family’s devices.')
+          + '</p>'
+          + '<div class="field"><label>Heads up</label>'
+          + '<p class="hint" style="margin:0">Signing in doesn’t change your board yet. '
+          + 'Everything stays on this device until sync is finished.</p></div>'
+          + '<footer><button class="btn" onclick="closeDlg()">Cancel</button>'
+          + '<button class="btn primary"' + (connecting ? ' disabled' : '')
+          + ' onclick="signIn()">Sign in with Google</button></footer>')
+    + '</div>';
+  showDlg();
+}
+
+/* supabase-js is an ES module from a CDN; if it fails to load (offline, or
+   the CDN is blocked) the app carries on exactly as before. */
+addEventListener('sb-ready', async ()=>{
+  sb = window.__sb;
+  try{
+    const { data } = await sb.auth.getSession();
+    sbUser = data.session ? data.session.user : null;
+  }catch(e){}
+  acctPaint();
+  sb.auth.onAuthStateChange((_e, session)=>{
+    const was = sbUser && sbUser.id;
+    sbUser = session ? session.user : null;
+    acctPaint();
+    if(sbUser && sbUser.id !== was) toast('Signed in as ' + sbUser.email, 'good');
+  });
+});
+addEventListener('sb-failed', ()=>{
+  acctPaint();
+  console.warn('Supabase client unavailable — running local-only.');
+});
+
 render();
+acctPaint();
 
 /* Photos live in IndexedDB; pull them into memory then repaint so render()
    can stay synchronous. Failure here is non-fatal — shapes fall back to
@@ -3245,6 +3340,23 @@ render();
 photoAll()
   .then(all=>{ PHOTOS = all || {}; if(Object.keys(PHOTOS).length) render(); })
   .catch(()=>{ /* private mode or blocked storage — colours still work */ });
+</script>
+
+<script type="module">
+  /* Loaded as a module so the main script above stays a plain classic script
+     (its inline onclick handlers need globals). */
+  try{
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    window.__sb = createClient(
+      'https://ivjxtlznikqxyscyyxzk.supabase.co',
+      'sb_publishable_AyiE1P_yJ8aaBtDCqgMS0Q_22dROzpT',
+      { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } }
+    );
+    dispatchEvent(new Event('sb-ready'));
+  }catch(e){
+    console.warn('supabase-js failed to load', e);
+    dispatchEvent(new Event('sb-failed'));
+  }
 </script>
 </body>
 </html>
