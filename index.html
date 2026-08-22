@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0c14">
 <title>Laundry HQ</title>
+
+<!-- Home Screen / tab icons. Without an apple-touch-icon iOS uses a screenshot
+     of the page as the Home Screen icon, which is what it was doing. -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Laundry">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 /* ============================================================
    TOKENS
@@ -644,7 +655,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22e';
+const BUILD = '2026-08-22f';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
