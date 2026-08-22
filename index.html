@@ -655,7 +655,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22f';
+const BUILD = '2026-08-22g';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -1635,19 +1635,26 @@ function setupView(){
     '<div class="prow"><span class="sw" style="--oc:'+f.hex+'"></span>'
     + '<input type="text" id="sp'+i+'" placeholder="Name — '+f.hint+'" autocomplete="off"></div>'
   ).join('');
+  /* The local-only path is hidden: everyone in this household signs in. It
+     reappears only if sign-in genuinely can't load, so a network or CDN
+     problem can't lock someone out of the app entirely. */
+  const offline = sbFailed;
   return '<div class="setup">'
     + '<h2>Welcome to Laundry HQ 🧺</h2>'
-    + '<p class="lead">If your family already uses Laundry HQ, sign in and this '
-    + 'device joins their board — the same loads, machines and schedule, live.</p>'
-    + '<button class="btn primary wide" style="margin-top:16px"'
+    + '<p class="lead">Sign in to join your family’s board — the same loads, machines '
+    + 'and schedule, live on every device.</p>'
+    + '<button class="btn primary wide" style="margin-top:18px"'
       + (sb ? '' : ' disabled') + ' onclick="signIn()">'
       + (sb ? 'Sign in with Google' : 'Connecting…') + '</button>'
-    + '<div class="orbar"><span>or set this device up on its own</span></div>'
-    + '<p class="lead" style="font-size:12.5px">Seven colour slots — type a name beside '
-    + 'each one you need. Blank rows are skipped. These names stay on this device only '
-    + 'and are not shared with the family board.</p>'
-    + '<div class="rows" style="margin-top:14px">'+rows+'</div>'
-    + '<button class="btn wide" style="margin-top:14px" onclick="finishSetup()">Use this device only →</button>'
+    + (offline
+        ? '<div class="orbar"><span>can’t reach the sign-in service</span></div>'
+          + '<p class="lead" style="font-size:12.5px">You appear to be offline, so signing '
+          + 'in isn’t possible right now. You can set this device up on its own and it '
+          + 'will keep its own private board — it won’t be shared with the family.</p>'
+          + '<div class="rows" style="margin-top:14px">'+rows+'</div>'
+          + '<button class="btn wide" style="margin-top:14px" onclick="finishSetup()">'
+          + 'Use this device only →</button>'
+        : '')
     + '</div>';
 }
 function finishSetup(){
@@ -1947,7 +1954,7 @@ addEventListener('keydown', e=>{
 const SB_URL = 'https://ivjxtlznikqxyscyyxzk.supabase.co';
 const SB_KEY = 'sb_publishable_AyiE1P_yJ8aaBtDCqgMS0Q_22dROzpT';
 
-let sb = null, sbUser = null;
+let sb = null, sbUser = null, sbFailed = false;
 
 function acctPaint(){
   const b = document.getElementById('acctBtn');
@@ -2212,6 +2219,7 @@ function syncStop(){
 
 addEventListener('sb-ready', async ()=>{
   sb = window.__sb;
+  sbFailed = false;
   try{
     const { data } = await sb.auth.getSession();
     sbUser = data.session ? data.session.user : null;
@@ -2230,9 +2238,15 @@ addEventListener('sb-ready', async ()=>{
   });
 });
 addEventListener('sb-failed', ()=>{
+  sbFailed = true;
   acctPaint();
+  if(!S.setup) render();          // reveal the offline fallback
   console.warn('Supabase client unavailable — running local-only.');
 });
+/* Don't leave a new device stuck on "Connecting…" forever if the CDN hangs. */
+setTimeout(()=>{
+  if(!sb && !sbFailed){ sbFailed = true; acctPaint(); if(!S.setup) render(); }
+}, 9000);
 
 render();
 acctPaint();
