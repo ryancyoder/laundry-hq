@@ -572,6 +572,12 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 .deskadd{display:none}
 @media (min-width:760px){.deskadd{display:inline-flex}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.joincode{
+  flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:19px;font-weight:700;letter-spacing:3px;color:var(--ink);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+  padding:9px 12px;text-align:center;user-select:all;
+}
 /* signed-in account chip */
 .btn.icon.signedin{
   background:linear-gradient(135deg,var(--s3),#12805c);
@@ -638,7 +644,7 @@ input:focus,select:focus{outline:2px solid var(--s1);outline-offset:1px;border-c
 const KEY = 'yoder-laundry-v1';
 /* Bumped whenever this file changes. Shown in Settings so a phone running an
    old copy from iCloud / the home screen is obvious at a glance. */
-const BUILD = '2026-08-22d';
+const BUILD = '2026-08-22e';
 const HEX = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
 
 /* Seven colour slots for the household. Names are entered on first run and
@@ -1802,6 +1808,15 @@ function openSettings(){
       + '<div class="switch"><div><div class="t">Browser notifications</div><div class="d">Works even when this tab is in the background</div></div>'
         + '<button class="toggle" aria-pressed="'+!!S.settings.notify+'" onclick="toggleNotify(this)"></button></div>'
     + '</div>'
+    + (isSynced()
+        ? '<div class="field"><label>Household code</label>'
+          + '<p class="hint" style="margin:0 0 8px">Anyone who signs in with this code '
+          + 'joins the <b>' + esc(HH_NAME || 'family') + '</b> board. Share it with the '
+          + 'family; treat it like a password.</p>'
+          + '<div class="prow"><code class="joincode">' + esc(HH_CODE || '…') + '</code>'
+          + '<button class="btn sm" onclick="copyCode()">Copy</button>'
+          + '<button class="btn sm ghost" onclick="rotateCode()">New code</button></div></div>'
+        : '')
     + '<div class="field"><label>Data</label>'
       + '<div class="prow"><button class="btn sm" onclick="exportData()">Export JSON</button>'
       + '<button class="btn sm" onclick="wipe()" style="color:#ffb3b3">Reset everything</button></div>'
@@ -2107,11 +2122,12 @@ async function syncStart(){
   if(!sb || !sbUser) return;
   const { data, error } = await sb.from('household_members').select('household_id').limit(1);
   if(error || !data || !data.length){
-    toast('Signed in, but this account isn’t in a household yet.','bad');
+    openJoin();                       // signed in but not family yet
     return;
   }
   HH = data[0].household_id;
   await pullAll();
+  loadJoinCode();
   ['laundry_loads','laundry_machines','laundry_chores','laundry_people'].forEach(t=>{
     sb.channel('lh_'+t)
       .on('postgres_changes', { event:'*', schema:'public', table:t }, pullSoon)
@@ -2119,6 +2135,63 @@ async function syncStart(){
   });
   toast('Synced — this board is now shared.','good');
 }
+let HH_CODE = null, HH_NAME = null;
+
+function openJoin(){
+  dlg.innerHTML = '<div class="dlg">'
+    + '<h2>Join your family</h2>'
+    + '<p class="hint">You’re signed in as <b>' + esc(sbUser ? sbUser.email : '') + '</b>, '
+    + 'but this account isn’t on a household board yet. Ask whoever set it up for the '
+    + 'household code — it’s under ⚙ Settings on their device.</p>'
+    + '<div class="field"><label for="joinCode">Household code</label>'
+      + '<input type="text" id="joinCode" placeholder="e.g. 4K8S3E2P" autocomplete="off"'
+      + ' autocapitalize="characters" spellcheck="false"'
+      + ' style="text-transform:uppercase;letter-spacing:2px;font-size:17px"></div>'
+    + '<footer><button class="btn ghost" onclick="closeDlg()">Not now</button>'
+      + '<button class="btn primary" onclick="submitJoin()">Join</button></footer>'
+    + '</div>';
+  showDlg();
+  const i = document.getElementById('joinCode');
+  i.focus();
+  i.onkeydown = e => { if(e.key==='Enter') submitJoin(); };
+}
+
+async function submitJoin(){
+  const el = document.getElementById('joinCode');
+  const code = (el ? el.value : '').trim();
+  if(!code){ toast('Enter the household code.','bad'); return; }
+  const { data, error } = await sb.rpc('join_household', { code });
+  if(error){ toast(error.message || 'That code didn’t work.','bad'); return; }
+  const row = Array.isArray(data) ? data[0] : data;
+  dlg.close();
+  toast('Joined ' + (row && row.name ? row.name : 'the household') + ' 🎉','good');
+  syncStart();
+}
+
+async function loadJoinCode(){
+  if(!isSynced()) return null;
+  const { data } = await sb.from('households').select('join_code,name').eq('id',HH).single();
+  HH_CODE = data ? data.join_code : null;
+  HH_NAME = data ? data.name : null;
+  return HH_CODE;
+}
+function copyCode(){
+  if(!HH_CODE) return;
+  navigator.clipboard.writeText(HH_CODE)
+    .then(()=>toast('Code copied — ' + HH_CODE,'good'))
+    .catch(()=>toast('Code: ' + HH_CODE));
+}
+async function rotateCode(){
+  if(!isSynced()) return;
+  if(!confirm('Generate a new household code? The old one stops working, so anyone '
+    + 'who hasn’t joined yet will need the new one.')) return;
+  const { data, error } = await sb.rpc('rotate_join_code', { hid: HH });
+  if(error){ toast(error.message,'bad'); return; }
+  HH_CODE = data;
+  openSettings();
+  toast('New code: ' + data,'good');
+}
+
 function syncStop(){
   HH = null;
   if(sb) sb.removeAllChannels();
